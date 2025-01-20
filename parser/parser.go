@@ -358,23 +358,23 @@ This second *ast.InfixExpression then needs to have the integer literals 1 and 2
 ast.InfixExpression.Right child nodes, respectively. Like this:
 
 											*ast.InfixExpression
-							                |                 \
-											|				   \
-											|					\
-											|					 \
-											|					  \
-							                |                      \
-							                |                       \
-											|						 \
-								            |                         \
-											|						   \
-											|							\
-											|							 \
-							    *ast.InfixExpression     				*ast.IntegerLiteral
-							        /           \               				|
-							*ast.IntegerLiteral *ast.IntegerLiteral  			3
-							        |                |
-							        1                2
+							                                |                 \
+											|		   \
+											|		    \
+											|		     \
+											|		      \
+							                                |                      \
+							                                |                       \
+											|			 \
+								                        |                         \
+											|			   \
+											|			    \
+											|			     \
+							                         *ast.InfixExpression     	*ast.IntegerLiteral
+							                            /           \               	|
+							                 *ast.IntegerLiteral *ast.IntegerLiteral  	3
+							                           |                |
+							                           1                2
 
 Here is what happens when we parse 1 + 2 + 3;:
 
@@ -437,16 +437,16 @@ Here is what happens when we parse 1 + 2 + 3;:
 												 +------------------------+
 												 | *ast.InfixExpression   |
 												 +------------------------+
-														  /        \
-														 /          \
-														/            \
-											+----------------------+  +----------------------+
-											| *ast.IntegerLiteral  |  | *ast.IntegerLiteral  |
-											+----------------------+  +----------------------+
-													   |                        |
-													   |                        |
-													   v                        v
-													  (1)                      (2)
+												          /        \
+													 /          \
+													/            \
+										+----------------------+  +----------------------+
+										| *ast.IntegerLiteral  |  | *ast.IntegerLiteral  |
+										+----------------------+  +----------------------+
+												|                        |
+												|                        |
+												v                        v
+											       (1)                      (2)
 
 6. Now we’re back in the outer-most call to parseExpression, where precedence is still LOWEST.
 7. We are back where we started and the condition of the for-loop is evaluated again
@@ -463,24 +463,26 @@ in our expression, which is higher.
 	4. After all this, at the end of the loop-body, leftExp looks like this which is exactly what we wanted.
 		The operators and operands are nested correctly!
 
+
 											*ast.InfixExpression
-							                |                 \
-											|				   \
-											|					\
-											|					 \
-											|					  \
-							                |                      \
-							                |                       \
-											|						 \
-								            |                         \
-											|						   \
-											|							\
-											|							 \
-							    *ast.InfixExpression     				*ast.IntegerLiteral
-							        /           \               				|
-							*ast.IntegerLiteral *ast.IntegerLiteral  			3
-							        |                |
-							        1                2
+							                                |                 \
+											|		   \
+											|		    \
+											|		     \
+											|		      \
+							                                |                      \
+							                                |                       \
+											|			 \
+								                        |                         \
+											|			   \
+											|			    \
+											|			     \
+							                         *ast.InfixExpression     	*ast.IntegerLiteral
+							                            /           \               	|
+							                 *ast.IntegerLiteral *ast.IntegerLiteral  	3
+							                           |                |
+							                           1                2
+				  
 
 	5. And our tokens look like this:
 
