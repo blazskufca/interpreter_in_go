@@ -184,3 +184,51 @@ func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
 // String on IntegerLiteral type satisfies the Node interface (and consequently the fmt.Stringer)
 // It returns stringified contents of IntegerLiteral (literal value of IntegerLiteral.Token).
 func (il *IntegerLiteral) String() string { return il.Token.Literal }
+
+type PrefixExpression struct {
+	Token    token.Token // Token is the prefix token, e.g. "!"
+	Operator string      // Operator is a string which contains the operator literal, e.g. "!" or "-"
+	Right    Expression  // Right contains the Expression on the right side of the Operator
+}
+
+// expressionNode on type PrefixExpression fulfills the Expression interface.
+func (pe *PrefixExpression) expressionNode() {}
+
+// TokenLiteral on type PrefixExpression fulfills the Node interface.
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+
+// String on PrefixExpression type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of PrefixExpression (PrefixExpression.Operator and PrefixExpression.Right).
+func (pe *PrefixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(pe.Operator)
+	out.WriteString(pe.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
+
+type InfixExpression struct {
+	Token    token.Token // Token is the operator token, e.g. +
+	Left     Expression  // Left is the Expression on the left side of the Operator
+	Operator string      // Operator is a string literal of the operator, e.g. "+", "-"
+	Right    Expression  // Right is the Expression on the right side of the Operator
+}
+
+// expressionNode on type InfixExpression fulfills the Expression interface.
+func (ie *InfixExpression) expressionNode() {}
+
+// TokenLiteral on type InfixExpression fulfills the Node interface.
+func (ie *InfixExpression) TokenLiteral() string { return ie.Token.Literal }
+
+// String on InfixExpression type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of InfixExpression (InfixExpression.Left, InfixExpression.Operator and InfixExpression.Operator).
+func (ie *InfixExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString(" " + ie.Operator + " ")
+	out.WriteString(ie.Right.String())
+	out.WriteString(")")
+	return out.String()
+}
