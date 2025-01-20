@@ -168,3 +168,19 @@ func (es *ExpressionStatement) String() string {
 	}
 	return ""
 }
+
+type IntegerLiteral struct {
+	Token token.Token // Token is the token associated with this integer literal
+	Value int64       // The Value of an integer literal is an int64, which should make sense, since they are integers...
+}
+
+// expressionNode on IntegerLiteral fulfills the Expression interface.
+func (il *IntegerLiteral) expressionNode() {}
+
+// TokenLiteral on IntegerLiteral fulfills the Node interface.
+// It returns the literal value of IntegerLiteral.Token
+func (il *IntegerLiteral) TokenLiteral() string { return il.Token.Literal }
+
+// String on IntegerLiteral type satisfies the Node interface (and consequently the fmt.Stringer)
+// It returns stringified contents of IntegerLiteral (literal value of IntegerLiteral.Token).
+func (il *IntegerLiteral) String() string { return il.Token.Literal }

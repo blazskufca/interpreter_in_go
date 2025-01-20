@@ -5,6 +5,7 @@ import (
 	"github.com/blazskufc/interpreter_in_go/ast"
 	"github.com/blazskufc/interpreter_in_go/lexer"
 	"github.com/blazskufc/interpreter_in_go/token"
+	"strconv"
 )
 
 /*
@@ -115,22 +116,57 @@ Here is some terminology related to Pratt parser which you should probably under
 	- It’s “more important” than the + operator. It gets evaluated before the other operator.
 */
 
+// These constants define the precedence/order of operations.
+// The actual iota value does not matter, however the ORDERING does!!!
+const (
+	_ int = iota
+	LOWEST
+	EQUALS      // ==
+	LESSGREATER // > or <
+	SUM         // +
+	PRODUCT     // *
+	PREFIX      // -X or !X
+	CALL        // myFunction(X)
+)
+
+// Main idea in Pratt parser is the association of parsing functions with token types.
+// Each token can have two functions associated with it, prefix and infix, depending on where the token is located.
+// This is the definition of these two parsing functions.
+type (
+	prefixParseFn func() ast.Expression
+	// Only the infixParseFn function takes an argument (prefixParseFn does not) which is an ast.Expression.
+	// This argument represents the left side of the infix operator (a prefix operator and therefore prefixParseFn does not have a "left" side per definition)
+	infixParseFn func(ast.Expression) ast.Expression
+)
+
 type Parser struct {
-	lex       *lexer.Lexer // lex holds a pointer to lexer.Lexer
-	curToken  token.Token  // curToken is the current token.Token
-	peekToken token.Token  // peekToken is the next token.Token
-	errors    []string     // errors is a slice of errors (of type string!) encountered during parsing
+	lex            *lexer.Lexer                      // lex holds a pointer to lexer.Lexer
+	curToken       token.Token                       // curToken is the current token.Token
+	peekToken      token.Token                       // peekToken is the next token.Token
+	errors         []string                          // errors is a slice of errors (of type string!) encountered during parsing
+	prefixParseFns map[token.TokenType]prefixParseFn // prefixParseFns is an associative map between token.TokenType and a prefix parsing function (prefixParseFn)
+	infixParseFns  map[token.TokenType]infixParseFn  // infixParseFns is an associative map between token.TokenType and a infix parsing function (infixParseFn)
 }
 
 // NewParser accepts a pointer to lexer.Lexer and returns a new pointer to Parser after initializing it
 // (assures Parser.curToken and Parser.peekToken are set).
 func NewParser(lex *lexer.Lexer) *Parser {
-	p := &Parser{lex: lex, errors: []string{}}
+	p := &Parser{lex: lex, errors: []string{}, prefixParseFns: make(map[token.TokenType]prefixParseFn)}
+	p.registerPrefix(token.IDENT, p.parseIdentifier)
+	p.registerPrefix(token.INT, p.parseIntegerLiteral)
 	// Read two tokens, so Parser.curToken and Parser.peekToken are both set
 	for i := 0; i < 2; i++ {
 		p.nextToken()
 	}
 	return p
+}
+
+// parseIdentifier is an associated prefixParseFn for the token.Identifier type.
+// It only returns a *ast.Identifier with the current token in the ast.Identifier.Token field and the literal value of
+// the token in ast.Identifier.Value
+// It doesn’t advance the tokens, it doesn’t call nextToken.
+func (p *Parser) parseIdentifier() ast.Expression {
+	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 }
 
 // nextToken sets the Parser.curToken and Parser.peekToken to their respective values (Parser.peekToken is one ahead of Parser.curToken)
@@ -164,7 +200,9 @@ func (p *Parser) parseStatement() ast.Statement {
 	case token.RETURN:
 		return p.parseReturnStatement()
 	default:
-		return nil
+		// Since the only two real statements in Monkey lang are "let"s and "returns", we try to parse an expression
+		// token type is neither of those two!
+		return p.parseExpressionStatement()
 	}
 }
 
@@ -244,4 +282,59 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 		p.nextToken()
 	}
 	return statement
+}
+
+// registerPrefix adds an association to Parser.prefixParseFns map for the specified token.TokenType
+func (p *Parser) registerPrefix(tokenType token.TokenType, fn prefixParseFn) {
+	p.prefixParseFns[tokenType] = fn
+}
+
+// registerInfix adds an association to Parser.infixParseFns map for the specified token.TokenType
+func (p *Parser) registerInfix(tokenType token.TokenType, fn infixParseFn) {
+	p.infixParseFns[tokenType] = fn
+}
+
+// parseExpressionStatement tries to parse Parser.curToken as na ast.ExpressionStatement.
+// It returns a pointer to ast.ExpressionStatement.
+func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
+	statement := &ast.ExpressionStatement{Token: p.curToken}
+	statement.Expression = p.parseExpression(LOWEST)
+	// If the next token is a token.SEMICOLON (;) we advance the Parser pointers so that token.SEMICOLON is the parsers
+	// curToken.
+	// If the next token is not a SEMICOLON, that's OK too! We don't add an error to the parser
+	// We want expressions to have optional semicolons.
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return statement
+}
+
+// parseExpression takes a precedence/order of operation value, as defined in parser constants.
+// It then tries to find an prefixParseFn associated with Parser.curToken in Parser.prefixParseFns map.
+// If there is no association (Parser.prefixParseFns[ Parser.curToken ] == nil) a nil is returned.
+// Otherwise a value produced by calling the associated prefixParseFn is returned (which is an ast.Expression)
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	prefix := p.prefixParseFns[p.curToken.Type]
+	if prefix == nil {
+		return nil
+	}
+	leftExp := prefix()
+	return leftExp
+}
+
+// parseIntegerLiteral tries to construct a ast.IntegerLiteral from Parser.curToken.
+// It does so by transforming the Parser.curToken literal value from a string to int64 which is then assigned to ast.IntegerLiteral.Value.
+// If it fails to do this conversion a nil is returned! Otherwise, an ast.Expression is returned!
+// parseIntegerLiteral is also an associated prefixParseFn for the token.INT type.
+func (p *Parser) parseIntegerLiteral() ast.Expression {
+	literal := &ast.IntegerLiteral{Token: p.curToken}
+	// Since the ast.IntegerLiteral.Value is an int64 we have to transform the token literal value to an int64
+	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
+	if err != nil { // If we can't transform the token literal from string to int64 that's a parsing error, so add it to parser errors
+		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
+		p.errors = append(p.errors, msg)
+		return nil
+	}
+	literal.Value = value
+	return literal
 }
