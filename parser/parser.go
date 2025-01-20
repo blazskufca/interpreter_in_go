@@ -346,10 +346,10 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 // Also what we call prefixParseFns are “nuds” (for “null denotations”) for Pratt. infixParseFns are “leds” (for “left denotations”).
 /*
 Suppose we’re parsing the following expression statement:
-													1 + 2 + 3;
+										1 + 2 + 3;
 
 What we want is an AST that (serialized as a string) looks like this:
-													((1 + 2) + 3)
+										((1 + 2) + 3)
 The AST needs to have two *ast.InfixExpression nodes.
 The *ast.InfixExpression higher in the tree should have the integer literal 3 as its ast.InfixExpression.Right
 child node and its ast.InfixExpression.Left child node needs to be the other *ast.InfixExpression.
@@ -404,11 +404,11 @@ Here is what happens when we parse 1 + 2 + 3;:
 		3.  it advances the tokens so they now look like this:
 
 									1    +     2  +     3     ;
-										 ^     ^
-										 |     |
-										 |     Parser.peekToken
-										 |
-									   Parser.curToken
+									     ^     ^
+									     |     |
+									     |     Parser.peekToken
+									     |
+									Parser.curToken
 
 		4. With the tokens in this state, it calls parseInfixExpression and passes in the already parsed *ast.IntegerLiteral assigned to the leftExp outside the for loop
 		5. It’s important to note that left in parseInfixExpression is our already parsed *ast.IntegerLiteral that represents the 1.
@@ -418,11 +418,11 @@ Here is what happens when we parse 1 + 2 + 3;:
 		9. So now parseExpression is called the second time, with the tokens looking like this:
 
 										1     +     2     +     3     ;
-													^     ^
-													|     |
-													|     Parser.peekToken
-													|
-												 Parser.curToken
+											    ^     ^
+											    |     |
+											    |     Parser.peekToken
+											    |
+										    Parser.curToken
 		10. The first thing parseExpression does again is to look for a prefixParseFn for Parser.curToken (which is 2)
 		11. This is again parseIntegerLiteral
 		12. But now the condition of the for-loop DOES NOT evaluate to true:
@@ -487,11 +487,11 @@ in our expression, which is higher.
 	5. And our tokens look like this:
 
 										1     +     2     +     3     ;
-																^     ^
-																|     |
-																|     Parser.peekToken
-																|
-															 Parser.curToken
+													^     ^
+													|     |
+													|     Parser.peekToken
+													|
+												Parser.curToken
 	6. The condition of the for-loop evaluates to false:
 		1. Now Parser.peekTokenIs (token.SEMICOLON) evaluates to true, which stops the body of the loop from
 			being executed again.
