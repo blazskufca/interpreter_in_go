@@ -3,6 +3,7 @@ package ast
 import (
 	"bytes"
 	"github.com/blazskufc/interpreter_in_go/token"
+	"strings"
 )
 
 /*
@@ -298,5 +299,73 @@ func (bs *BlockStatement) String() string {
 	for _, s := range bs.Statements {
 		out.WriteString(s.String())
 	}
+	return out.String()
+}
+
+type FunctionLiteral struct {
+	Token      token.Token     // Token is the "fn" token
+	Parameters []*Identifier   // Parameters are the function parameters in Monkey lang -> fn <parameters <<parameter one>, <parameter two>, <parameter three>, ...> > <block statement>
+	Body       *BlockStatement // Body is the body of the function in Monkey Lang
+}
+
+// expressionNode on FunctionLiteral fulfills the Expression interface.
+func (fl *FunctionLiteral) expressionNode() {}
+
+// TokenLiteral on FunctionLiteral fulfills the Node interface.
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Literal }
+
+// String on FunctionLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of FunctionLiteral (FunctionLiteral.Parameters and FunctionLiteral.Body).
+func (fl *FunctionLiteral) String() string {
+	var out bytes.Buffer
+	params := []string{}
+	for _, p := range fl.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString(fl.TokenLiteral())
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	out.WriteString(fl.Body.String())
+	return out.String()
+}
+
+// CallExpression is an expression which is evaluated/constructed in the AST when a function call is encountered during
+// parsing.
+// CallExpression in monkey lang follow this specification:
+//
+// <expression>(<comma separated expressions>)
+//
+// Which means all of the following example are valid CallExpression's in monkey lang:
+//
+// add(2, 3)
+//
+// add(2 + 2, 3 * 3 * 3)
+//
+// callsFunction(2, 3, fn(x, y) { x + y; });
+type CallExpression struct {
+	Token     token.Token  // Token is the "(" token
+	Function  Expression   // Function is the Identifier or FunctionLiteral
+	Arguments []Expression // Arguments are function arguments supplied to FunctionLiteral / CallExpression
+}
+
+// expressionNode on CallExpression type satisfies the Expression interface.
+func (ce *CallExpression) expressionNode() {}
+
+// TokenLiteral on CallExpression fulfills the Node interface.
+func (ce *CallExpression) TokenLiteral() string { return ce.Token.Literal }
+
+// String on CallExpression type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of CallExpression (CallExpression.Arguments and CallExpression.Function).
+func (ce *CallExpression) String() string {
+	var out bytes.Buffer
+	args := []string{}
+	for _, a := range ce.Arguments {
+		args = append(args, a.String())
+	}
+	out.WriteString(ce.Function.String())
+	out.WriteString("(")
+	out.WriteString(strings.Join(args, ", "))
+	out.WriteString(")")
 	return out.String()
 }

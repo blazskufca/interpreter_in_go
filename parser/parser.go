@@ -140,6 +140,7 @@ var precedences = map[token.TokenType]int{
 	token.MINUS:    SUM,
 	token.SLASH:    PRODUCT,
 	token.ASTERISK: PRODUCT,
+	token.LPAREN:   CALL,
 }
 
 // Main idea in Pratt parser is the association of parsing functions with token types.
@@ -174,6 +175,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FALSE, p.parseBoolean)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
+	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -184,6 +186,11 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
+	// This is for parsing function calls / call expressions
+	// <expression>(<comma separated expressions>)
+	// e.g.
+	// add(2, 3)
+	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	// Read two tokens, so Parser.curToken and Parser.peekToken are both set
 	for i := 0; i < 2; i++ {
 		p.nextToken()
@@ -252,11 +259,17 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	if !p.expectPeek(token.ASSIGN) {
 		return nil
 	}
-	// TODO: We're skipping the expressions until we
-	// encounter a semicolon
-	for !p.curTokenIs(token.SEMICOLON) {
+	// Advance
+	p.nextToken()
+
+	// Get the actual value in let <identifier> = <expression>;, i.e. the <expression> part...
+	statement.Value = p.parseExpression(LOWEST)
+
+	// If there was a semicolon advance past it
+	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
+
 	return statement
 }
 
@@ -305,10 +318,11 @@ func (p *Parser) Errors() []string {
 // It returns a pointer to ast.ReturnStatement
 func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 	statement := &ast.ReturnStatement{Token: p.curToken} // p.curToken here should be token.RETURN
-	p.nextToken()                                        // get the <expression>
-	// TODO: We're skipping the expressions until we
-	// encounter a semicolon
-	for !p.curTokenIs(token.SEMICOLON) {
+	p.nextToken()
+	// get the <expression>
+	statement.ReturnValue = p.parseExpression(LOWEST)
+	// Skip over all the ; if there are any
+	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
 	return statement
@@ -682,4 +696,101 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 		p.nextToken()
 	}
 	return block
+}
+
+// parseFunctionLiteral parses function literal expressions (ast.FunctionLiteral) from monkey lang, which follow this
+// specification: fn <parameters<(<parameter one>, <parameter two>, <parameter three>, ...)>> <block statement>.
+// It does so by parsing out the function parameters via a call to parseFunctionParameters and then parses out the
+// function body via a call to parseBlockStatement.
+// If there are no parsing errors, a ast.FunctionLiteral is constructed and returned to the caller.
+// Otherwise a nil is returned to the caller!
+func (p *Parser) parseFunctionLiteral() ast.Expression {
+	literal := &ast.FunctionLiteral{Token: p.curToken} // This is the "fn" token
+	// Functions in monkey lang follow this structure "fn <parameters> <block statement>" which we can expand to
+	// "fn <parameters<(<parameter one>, <parameter two>, <parameter three>, ...)>> <block statement>"
+	// Assert token.LPAREN follows, which it must looking at the above structure/specification
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	// Parse out the parameters, which is just a slice of *ast.Identifier
+	literal.Parameters = p.parseFunctionParameters()
+	// Now a function body must follow
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	literal.Body = p.parseBlockStatement()
+	return literal
+}
+
+// parseFunctionLiteral creates a slice of *ast.Identifier.
+// Most notable place where this is used at the moment in is in parseFunctionLiteral/ast.FunctionLiteral.Identifier.
+// If there are no Identifiers an empty slice is returned.
+// If there are no parsing errors and there were parameters supplied in the function, a []*ast.Identifier is returned,
+// as you might suspect.
+// If there are parsing errors, for example, a missing function body start (token.RPAREN), a nil is returned to the caller!
+func (p *Parser) parseFunctionParameters() []*ast.Identifier {
+	var identifiers []*ast.Identifier
+	// If we encounter right brace ({) it means there are no parameters
+	// e.g. a function like this: "fn () {return true};" for example...
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+		return identifiers
+	}
+	// Advance and parse the first parameter
+	p.nextToken()
+	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	identifiers = append(identifiers, ident) // will be appended it to the ast.FunctionLiteral.Identifiers
+	// If there is more than one parameter to the function literal
+	for p.peekTokenIs(token.COMMA) {
+		for i := 0; i < 2; i++ {
+			p.nextToken()
+		}
+		ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		identifiers = append(identifiers, ident)
+	}
+	// There should be no more parameters now... We need a function body, e.g. "{"
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	return identifiers
+}
+
+// parseCallExpression parses and creates a ast.CallExpression.
+// It does so by accepting a "function ast.Expression" parameter, which is assigned to ast.CallExpression.Function.
+// It then calls parseCallArguments and the results are assigned to ast.CallExpression.Arguments.
+// Constructed ast.CallExpression is returned.
+func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
+	exp := &ast.CallExpression{Token: p.curToken, Function: function}
+	exp.Arguments = p.parseCallArguments()
+	return exp
+}
+
+// parseCallArguments parses arguments in ast.CallExpression.Arguments.
+// It's most notably used in parseCallExpression.
+// A []ast.Expression is returned to the caller if the parsing of arguments was successful (no errors were encountered during parsing)
+// Otherwise (like in missing closing parenthesis) nil is returned to the caller.
+// It's noteworthy that this function is very similar to parseFunctionParameters in both the functionality, what it is
+// trying to accomplish as well as structure (there are minor differences).
+func (p *Parser) parseCallArguments() []ast.Expression {
+	args := []ast.Expression{}
+	// If there are no CallExpression arguments / no function arguments supplied to the function in monkey lang.
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+		return args
+	}
+	// Advance the token to be on the first arguments
+	p.nextToken()
+	// append the first argument to slice above... Actually append the result of a call to parseExpression with the LOWEST precedence!!!
+	args = append(args, p.parseExpression(LOWEST))
+	// If there are more, and while there are more arguments seperated by a token.COMMA just repeat the above...
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		args = append(args, p.parseExpression(LOWEST))
+	}
+	// Of course we need to get ) otherwise that's a parser/syntax error!!
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	return args
 }

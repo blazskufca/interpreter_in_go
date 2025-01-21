@@ -4,10 +4,24 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/blazskufc/interpreter_in_go/lexer"
-	"github.com/blazskufc/interpreter_in_go/token"
+	"github.com/blazskufc/interpreter_in_go/parser"
 	"io"
 	"log"
 )
+
+const MONKEY_FACE = `
+			__,__
+   .--. .-"     "-. .--.
+  / .. \\/  .-. .-.  \\/ .. \\
+ | |  '|  /   Y   \\  |'  | |
+ | \\  \\ \\  0   |   0  / / / |
+  \\ '-, \\.-""""""""-./,.-' /
+   ''-'  /_ ^   ^ _\\  '-''
+        |  \\._ _./  |
+         \\  \\ '~' /  /
+          '._ '-=-' _.'
+             '-----'
+`
 
 const PROMPT = ">> "
 
@@ -28,13 +42,45 @@ func Start(in io.Reader, out io.Writer) {
 
 		line := scanner.Text()
 		l := lexer.NewLexer(line)
+		p := parser.NewParser(l)
 
-		for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
-			_, err = fmt.Fprintf(out, "%+v\n", tok)
-			if err != nil {
-				log.Printf("failed to read write to output: %v", err)
-				continue
-			}
+		program := p.ParseProgram()
+		if len(p.Errors()) != 0 {
+			printParserErrors(out, p.Errors())
+			continue
+		}
+		_, err = io.WriteString(out, program.String())
+		if err != nil {
+			log.Printf("failed to write to output: %v", err)
+		}
+		_, err = io.WriteString(out, "\n")
+		if err != nil {
+			log.Printf("failed to write to output: %v", err)
+		}
+	}
+}
+
+func printParserErrors(out io.Writer, errors []string) {
+	_, err := io.WriteString(out, MONKEY_FACE)
+	if err != nil {
+		log.Printf("failed to write to output: %v", err)
+		return
+	}
+	_, err = io.WriteString(out, "Woops! We ran into some monkey business here!\n")
+	if err != nil {
+		log.Printf("failed to write to output: %v", err)
+		return
+	}
+	_, err = io.WriteString(out, " parser errors:\n")
+	if err != nil {
+		log.Printf("failed to write to output: %v", err)
+		return
+	}
+	for _, msg := range errors {
+		_, err = io.WriteString(out, "\t"+msg+"\n")
+		if err != nil {
+			log.Printf("failed to write to output: %v", err)
+			continue
 		}
 	}
 }
