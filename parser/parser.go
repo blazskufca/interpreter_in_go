@@ -170,6 +170,10 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.INT, p.parseIntegerLiteral)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+	p.registerPrefix(token.TRUE, p.parseBoolean)
+	p.registerPrefix(token.FALSE, p.parseBoolean)
+	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
+	p.registerPrefix(token.IF, p.parseIfExpression)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -482,7 +486,7 @@ in our expression, which is higher.
 							                 *ast.IntegerLiteral *ast.IntegerLiteral  	3
 							                           |                |
 							                           1                2
-				  
+
 
 	5. And our tokens look like this:
 
@@ -599,4 +603,83 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 	p.nextToken()
 	expression.Right = p.parseExpression(precedence) // Note that we pass the precedence we've got in the previous token as precedence to parseExpression
 	return expression
+}
+
+// parseBoolean creates an ast.Boolean.
+// The only noteworthy thing about it is, that is inlines curTokenIs to get the value in ast.Boolean.Value.
+func (p *Parser) parseBoolean() ast.Expression {
+	return &ast.Boolean{Token: p.curToken, Value: p.curTokenIs(token.TRUE)}
+}
+
+// parseGroupedExpression parses expression wrapped in parenthesis e.g. "let x = ((10 * 5) * 4)".
+// It achieves this by parsing the token.LPAREN ("("), then doing a (recursive) call to parseExpression with the next token
+// and finally asserting that the grouped expression ends with a token.RPAREN (")").
+// It returns the result it gets from a call to parseExpression which is an ast.Expression.
+func (p *Parser) parseGroupedExpression() ast.Expression {
+	p.nextToken() // Advance beyond the token.LPAREN ("(")
+
+	// Pass LOWEST into the parseExpression because we're not sure what comes next after the "(", parseExpression will have to decide that...
+	expression := p.parseExpression(LOWEST)
+
+	if !p.expectPeek(token.RPAREN) { // If the token.RPAREN (")") is missing in the input, the grouped expression is not closed...That's a parsing error!
+		return nil
+	}
+	return expression
+}
+
+// parseIfExpression parses ast.IfExpression expression.
+// It does so by parsing the the "wrapper" ( if (<condition>) {<consequence>} else {<alternative>}), then making a call
+// to parseBlockStatement to parse out the ast.IfExpression.Consequence
+// It returns a ast.IfExpression if everything went as it should, nil otherwise!
+func (p *Parser) parseIfExpression() ast.Expression {
+	expression := &ast.IfExpression{Token: p.curToken}
+	if !p.expectPeek(token.LPAREN) {
+		// ast.IfExpression.Condition (e.g. if (<condition>)) has to be wrapped in parenthesis...if we can't find a token.LPAREN that means condition is missing or if is wrongly structured which is a parser error...
+		return nil
+	}
+	// Advance beyond the token.LPAREN
+	p.nextToken()
+
+	// Get the actual condition
+	expression.Condition = p.parseExpression(LOWEST)
+
+	// If expression in monkey lang follow this structure -> if (<condition>) {<consequence>} else {<alternative>}
+	// Check we get the block after the condition
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	// Parse the actual body of the if...Which is wrapped in ast.BlockStatement
+	expression.Consequence = p.parseBlockStatement()
+	// If there is a else branch at all
+	if p.peekTokenIs(token.ELSE) {
+		p.nextToken() // Advance the pointers past the else
+		if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+		expression.Alternative = p.parseBlockStatement() // Get the actual alternative
+	}
+	return expression
+}
+
+// parseBlockStatement parses ast.BlockStatement as the name suggests.
+// It does so by parsing out the "wrapper", e.g. "{" and then making calls to parseStatement which results are then appended
+// to ast.BlockStatement.Statements slice if the result is not nil.
+// ast.BlockStatement is returned after everything inside the braces is parsed.
+func (p *Parser) parseBlockStatement() *ast.BlockStatement {
+	block := &ast.BlockStatement{Token: p.curToken} // the { token
+	block.Statements = []ast.Statement{}            // Initialize the slice...
+	p.nextToken()                                   // Advance the parser pointers past the {
+	// This should be pretty self explanatory...We want the contents between { and } and obviously we should stop if coming across EOF
+	// Coming across token.EOF (byte 0, ASCII "NUL") means we can't form a correct block since the file ended unexpectedly
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			block.Statements = append(block.Statements, stmt)
+		}
+		p.nextToken()
+	}
+	return block
 }

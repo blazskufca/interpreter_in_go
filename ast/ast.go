@@ -232,3 +232,71 @@ func (ie *InfixExpression) String() string {
 	out.WriteString(")")
 	return out.String()
 }
+
+type Boolean struct {
+	Token token.Token // Token is the token containing the boolean literal
+	Value bool        // Value is a boolean here, either true or false
+}
+
+// expressionNode on type Boolean satisfies the Expression interface
+func (b *Boolean) expressionNode() {}
+
+// TokenLiteral on type Boolean satisfies the Node interface.
+// It returns the literal value of  Boolean.Token.
+func (b *Boolean) TokenLiteral() string { return b.Token.Literal }
+
+// String on Boolean type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of Boolean (Boolean.Token).
+func (b *Boolean) String() string { return b.Token.Literal }
+
+// IfExpression in Monkey Lang follows the following structure -> if (<condition>) <consequence> else <alternative>
+type IfExpression struct {
+	Token       token.Token     // Token is the "if" token
+	Condition   Expression      // Condition is the Expression which kicks off the if body
+	Consequence *BlockStatement // Consequence is the *BlockStatement which is evaluated if the if Condition is true
+	Alternative *BlockStatement // Alternative is the *BlockStatement which is evaluated if the Condition is false
+}
+
+// expressionNode on type IfExpression satisfies the Expression interface
+func (ie *IfExpression) expressionNode() {}
+
+// TokenLiteral on type IfExpression satisfies the Node interface.
+// It returns the literal of IfExpression.Token.
+func (ie *IfExpression) TokenLiteral() string { return ie.Token.Literal }
+
+// String on IfExpression type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of IfExpression (IfExpression.Condition, IfExpression.Consequence and IfExpression.Alternative).
+func (ie *IfExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("if")
+	out.WriteString(ie.Condition.String())
+	out.WriteString(" ")
+	out.WriteString(ie.Consequence.String())
+	if ie.Alternative != nil {
+		out.WriteString("else ")
+		out.WriteString(ie.Alternative.String())
+	}
+	return out.String()
+}
+
+type BlockStatement struct {
+	Token      token.Token // Token is the "{" token
+	Statements []Statement // Statements in a slice of Statement -> Statements contained inside the {...}
+}
+
+// statementNode on type BlockStatement satisfies the Statement interface
+func (bs *BlockStatement) statementNode() {}
+
+// TokenLiteral on type BlockStatement satisfies the Node interface.
+// It returns the literal value of BlockStatement.Token.
+func (bs *BlockStatement) TokenLiteral() string { return bs.Token.Literal }
+
+// String on BlockStatement type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of BlockStatement (Statements inside BlockStatement.Statements are stringified and returned).
+func (bs *BlockStatement) String() string {
+	var out bytes.Buffer
+	for _, s := range bs.Statements {
+		out.WriteString(s.String())
+	}
+	return out.String()
+}
