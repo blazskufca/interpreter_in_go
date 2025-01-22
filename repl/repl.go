@@ -3,6 +3,7 @@ package repl
 import (
 	"bufio"
 	"fmt"
+	"github.com/blazskufc/interpreter_in_go/evaluator"
 	"github.com/blazskufc/interpreter_in_go/lexer"
 	"github.com/blazskufc/interpreter_in_go/parser"
 	"io"
@@ -49,14 +50,28 @@ func Start(in io.Reader, out io.Writer) {
 			printParserErrors(out, p.Errors())
 			continue
 		}
-		_, err = io.WriteString(out, program.String())
-		if err != nil {
-			log.Printf("failed to write to output: %v", err)
+		evaluated := evaluator.Eval(program)
+		if evaluated != nil {
+			_, err = io.WriteString(out, evaluated.Inspect())
+			if err != nil {
+				log.Printf("failed to write to output: %v", err)
+				continue
+			}
+			_, err = io.WriteString(out, "\n")
+			if err != nil {
+				log.Printf("failed to write to output: %v", err)
+				continue
+			}
 		}
-		_, err = io.WriteString(out, "\n")
-		if err != nil {
-			log.Printf("failed to write to output: %v", err)
-		}
+		// The old parse printout - > Print's the AST structure
+		//_, err = io.WriteString(out, program.String())
+		//if err != nil {
+		//	log.Printf("failed to write to output: %v", err)
+		//}
+		//_, err = io.WriteString(out, "\n")
+		//if err != nil {
+		//	log.Printf("failed to write to output: %v", err)
+		//}
 	}
 }
 
