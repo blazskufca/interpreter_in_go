@@ -50,9 +50,11 @@ The best way to see these decisions/ideas is to read through the source code of 
 type ObjectType string
 
 const (
-	INTEGER_OBJ = "INTEGER"
-	BOOLEAN_OBJ = "BOOLEAN"
-	NULL_OBJ    = "NULL"
+	INTEGER_OBJ      = "INTEGER"
+	BOOLEAN_OBJ      = "BOOLEAN"
+	NULL_OBJ         = "NULL"
+	RETURN_VALUE_OBJ = "RETURN_VALUE"
+	ERROR_OBJ        = "ERROR"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -103,3 +105,33 @@ func (n *Null) Type() ObjectType { return NULL_OBJ }
 // not necessarily in terms of functionality to the user (it's a interface defined method), but in terms of implementation
 // since there is no actual value bound to Null!
 func (n *Null) Inspect() string { return "null" }
+
+// ReturnValue wraps the Value it's supposed to return inside itself.
+// This is done because we pass Monkey Language return statements through our evaluator, keep track of it and later on
+// decide whether we should stop evaluating or not.
+type ReturnValue struct {
+	Value Object // Value is the value which was supposed to be returned in a Monkey return statement. It's a Object.
+}
+
+// Type on ObjectType type fulfils the Object.Type interface method.
+// It returns a constant, RETURN_VALUE_OBJ
+func (rv *ReturnValue) Type() ObjectType { return RETURN_VALUE_OBJ }
+
+// Inspect on ReturnValue fulfils the Object.Inspect interface method.
+// It returns the result of a call to ReturnValue.Value.Inspect.
+func (rv *ReturnValue) Inspect() string { return rv.Value.Inspect() }
+
+// Error represents an internal error in Monkey Language.
+// Error is an error encountered during execution of a Monkey program. For example wrong operators, unsupported operations
+// other internal errors and so on.
+type Error struct {
+	Message string // Message is the message for the encountered error.
+}
+
+// Type on Error type fulfils the Object.Type interface method.
+// It returns a constant, ERROR_OBJ.
+func (e *Error) Type() ObjectType { return ERROR_OBJ }
+
+// Inspect on Error fulfils the Object.Inspect interface method.
+// It returns the result a string -> "ERROR: Error.Message"
+func (e *Error) Inspect() string { return "ERROR: " + e.Message }
