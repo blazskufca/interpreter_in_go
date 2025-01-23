@@ -176,6 +176,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
+	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -793,4 +794,9 @@ func (p *Parser) parseCallArguments() []ast.Expression {
 		return nil
 	}
 	return args
+}
+
+// parseStringLiteral creates a new ast.StringLiteral ast.Expression and returns a pointer to it.
+func (p *Parser) parseStringLiteral() ast.Expression {
+	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
 }

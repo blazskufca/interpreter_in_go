@@ -154,6 +154,7 @@ if (10 > 1) {
 `, "unknown operator: BOOLEAN + BOOLEAN",
 		},
 		{"foobar", "identifier not found: foobar"},
+		{`"Hello" - "World"`, "unknown operator: STRING - STRING"},
 	}
 	for _, tt := range tests {
 		evaluated := testEval(t, tt.input)
@@ -247,6 +248,46 @@ let newAdder = fn(x) {
 let addTwo = newAdder(2);
 addTwo(2);`
 	testIntegerObject(t, testEval(t, input), 4)
+}
+
+func TestStringLiteral(t *testing.T) {
+	input := `"Hello World!"`
+	evaluated := testEval(t, input)
+	str, ok := evaluated.(*object.String)
+	if !ok {
+		t.Fatalf("object is not String. got=%T (%+v)", evaluated, evaluated)
+	}
+	if str.Value != "Hello World!" {
+		t.Errorf("String has wrong value. got=%q", str.Value)
+	}
+}
+
+func TestStringConcatenation(t *testing.T) {
+	input := `"Hello" + " " + "World!"`
+	evaluated := testEval(t, input)
+	str, ok := evaluated.(*object.String)
+	if !ok {
+		t.Fatalf("object is not String. got=%T (%+v)", evaluated, evaluated)
+	}
+	if str.Value != "Hello World!" {
+		t.Errorf("String has wrong value. got=%q", str.Value)
+	}
+}
+
+func TestStringEqual(t *testing.T) {
+	input := `let string_a = "hello world"
+	let string_b = "hello world"
+	string_a == string_b;
+	`
+	testBooleanObject(t, testEval(t, input), true)
+}
+
+func TestStringNotEqual(t *testing.T) {
+	input := `let string_a = "hello"
+	let string_b = "world"
+	string_a != string_b;
+	`
+	testBooleanObject(t, testEval(t, input), true)
 }
 
 func testIntegerObject(t *testing.T, obj object.Object, expected int64) bool {

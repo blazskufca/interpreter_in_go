@@ -121,6 +121,8 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return args[0]
 		}
 		return applyFunction(function, args)
+	case *ast.StringLiteral:
+		return &object.String{Value: node.Value}
 	}
 	return nil
 }
@@ -221,6 +223,8 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 		return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
+	case left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ:
+		return evalStringInfixExpression(operator, left, right)
 	// Note that this is actually a pointer comparison.
 	// It works on booleans and nulls because we have them defined just once in package and we reuse them for every true, false (and null) we encounter in the AST.
 	// It wouldn't work with object.INTEGER_OBJ for example, because we allocate a new object for each integer literal we
@@ -430,4 +434,30 @@ func unwrapReturnValue(obj object.Object) object.Object {
 		return returnValue.Value
 	}
 	return obj
+}
+
+// evalStringInfixExpression operates on string infix ast.Expression (left and right is a object.String)
+// If it's not an error is returned. If operator is unknown an error is returned.
+// Else, object.String with the resulting value of the operation is returned or a object.Boolean is returned if the
+// if the resulting expression results in a boolean value.
+func evalStringInfixExpression(operator string, left, right object.Object) object.Object {
+	leftString, ok := left.(*object.String)
+	if !ok {
+		return newError("not a string: %s", left.Type())
+	}
+	rightString, ok := right.(*object.String)
+	if !ok {
+		return newError("not a string: %s", right.Type())
+	}
+	leftVal, rightVal := leftString.Value, rightString.Value
+	switch operator {
+	case "+":
+		return &object.String{Value: leftVal + rightVal}
+	case "==":
+		return &object.Boolean{Value: leftVal == rightVal}
+	case "!=":
+		return &object.Boolean{Value: leftVal != rightVal}
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
 }

@@ -369,3 +369,19 @@ func (ce *CallExpression) String() string {
 	out.WriteString(")")
 	return out.String()
 }
+
+type StringLiteral struct {
+	Token token.Token // Token is the token.STRING
+	Value string      // Value is the string literal
+}
+
+// expressionNode on StringLiteral fulfills the Expression interface.
+func (sl *StringLiteral) expressionNode() {}
+
+// TokenLiteral on StringLiteral fulfills the Node interface.
+// It returns the literal value of the StringLiteral.Token.
+func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
+
+// String on StringLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of StringLiteral (StringLiteral.Token.Literal).
+func (sl *StringLiteral) String() string { return sl.Token.Literal }

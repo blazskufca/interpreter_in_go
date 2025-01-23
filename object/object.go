@@ -61,6 +61,7 @@ const (
 	RETURN_VALUE_OBJ = "RETURN_VALUE"
 	ERROR_OBJ        = "ERROR"
 	FUNCTION_OBJ     = "FUNCTION"
+	STRING_OBJ       = "STRING"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -204,3 +205,16 @@ func (f *Function) Inspect() string {
 	out.WriteString("\n}")
 	return out.String()
 }
+
+// String is an Object which is meant to represent a string object.
+type String struct {
+	Value string // String represent the actual string value!
+}
+
+// Type on String type fulfils the Object.Type interface method.
+// It returns a constant, STRING_OBJ.
+func (s *String) Type() ObjectType { return STRING_OBJ }
+
+// Inspect on String fulfils the Object.Inspect interface method.
+// It returns the result a stringified String (String.Value).
+func (s *String) Inspect() string { return s.Value }
