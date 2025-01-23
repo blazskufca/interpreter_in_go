@@ -235,6 +235,20 @@ func TestFunctionApplication(t *testing.T) {
 	}
 }
 
+func TestClosures(t *testing.T) {
+	// newAdder here is a higher-order function
+	// the closure addTwo still has access to the environment that was the current environment at the time of its definition.
+	// Remember: when function literals are evaluated we build an object.Function and keep a reference to the current environment in its .Env field
+	// This is why we
+	input := `
+let newAdder = fn(x) {
+	fn(y) { x + y };
+};
+let addTwo = newAdder(2);
+addTwo(2);`
+	testIntegerObject(t, testEval(t, input), 4)
+}
+
 func testIntegerObject(t *testing.T, obj object.Object, expected int64) bool {
 	t.Helper()
 	result, ok := obj.(*object.Integer)

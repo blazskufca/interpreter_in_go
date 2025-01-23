@@ -6,6 +6,27 @@ import (
 	"github.com/blazskufc/interpreter_in_go/object"
 )
 
+/*
+First of all, please note that this evaluator creates tons of garbage during execution of even the simplest Monkey code,
+i.e. it's not optimized in any way, at all.
+
+For example this Monkey code:
+let counter = fn(x) {
+	if (x > 100) {
+		return true;
+	} else {
+		let foobar = 9999;
+		counter(x + 1);
+	}
+};
+
+counter(0);
+
+Creates ~400 new objects.
+
+On this note, realize it relies solely on Go GC and does not implement its own in any way!
+*/
+
 // This is a small optimization of evaluator.
 // If you think about it, there's no point in creating new object.Boolean each time we encounter a boolean in AST...
 // We can just define TRUE and FALSE in as a global variable in the package, create one object.Boolean which represents
@@ -99,6 +120,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if len(args) == 1 && isError(args[0]) { // If there is an error, bail! Don't call the function.
 			return args[0]
 		}
+		return applyFunction(function, args)
 	}
 	return nil
 }
@@ -365,4 +387,47 @@ func evalExpressions(
 		result = append(result, evaluated)
 	}
 	return result
+}
+
+// applyFunction first check if the fn parameter can be cast to *object.Function at all.
+// If not, an object.Error is returned to the caller.
+// It then calls extendFunctionEnv to create a new enclosed environment from the environment which the object.Function
+// carries around.
+// It then evaluates the function body in this new enclosed environment.
+// A result of a call to unwrapReturnValue is returned to the caller.
+func applyFunction(fn object.Object, args []object.Object) object.Object {
+	function, ok := fn.(*object.Function)
+	if !ok {
+		return newError("not a function: %s", fn.Type())
+	}
+	extendedEnv := extendFunctionEnv(function, args)
+	evaluated := Eval(function.Body, extendedEnv)
+	return unwrapReturnValue(evaluated)
+}
+
+// extendFunctionEnv create a new enclosed environment via a call to object.NewEnclosedEnvironment.
+// Note that a new enclosed environment extends object.Function.Env and not the global environment!
+// It then sets all the args in this new environment.
+// Finally it returns a pointer to this new, enclosed environment!
+// Note: See comment and example in evaluator_test.go/TestClosure for why we're creating an enclosed environment from
+// the one in object.Function and not a global environment. Basically so it's we can have closures in Monkey!
+func extendFunctionEnv(fn *object.Function, args []object.Object,
+) *object.Environment {
+	env := object.NewEnclosedEnvironment(fn.Env)
+	for paramIdx, param := range fn.Parameters {
+		env.Set(param.Value, args[paramIdx])
+	}
+	return env
+}
+
+// unwrapReturnValue unwraps obj (object.Object) if it's a object.ReturnValue.
+// That’s necessary, because otherwise a return statement would bubble up through several functions and stop the evaluation
+// in all of them in function like applyFunction. But usually in functions like that one we only want to stop the
+// evaluation of the last called function’s body. That’s why we need unwrap it, so that evalBlockStatement won’t stop
+// evaluating statements in “outer” functions.
+func unwrapReturnValue(obj object.Object) object.Object {
+	if returnValue, ok := obj.(*object.ReturnValue); ok {
+		return returnValue.Value
+	}
+	return obj
 }

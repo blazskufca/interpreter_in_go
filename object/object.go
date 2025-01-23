@@ -145,6 +145,39 @@ func (e *Error) Inspect() string { return "ERROR: " + e.Message }
 // Function represent an Monkey function from the AST *ast.FunctionLiteral in the evaluator/internal object system.
 // It's pretty similar to the ast.FunctionLiteral, except that it does NOT contain the Token filed (since we don't need it
 // in the already parsed AST) and that it DOES contain the Env (object.Environment)!
+/*
+We need to change the Environment so that the references to parameters in the function’s body resolve to the correct arguments.
+But we can’t just add these arguments to the current environment.
+That could lead to previous bindings being overwritten, which is not what we want:
+
+let i = 5;
+
+let printNum = fn(i) {
+
+	puts(i);
+
+};
+
+printNum(10);
+
+puts(i);
+
+If we were to overwrite the current environment before evaluating the body of printNum, the last line would also result
+in 10 being printed.
+
+What we need to do instead is to preserve previous bindings while at the same time making new ones available - we’ll call that “extending
+the environment”.
+
+Extending the environment means that we create a new instance of object.Environment with a pointer to the environment
+it should extend.
+
+By doing that we enclose a fresh and empty environment with an existing one.
+
+When the new environment’s Function.Get method is called and it itself doesn’t have a value associated with the given
+name, it calls the Get of the enclosing environment. That’s the environment it’s extending. And if that enclosing
+environment can’t find the value, it calls its own enclosing environment and so on until there is no enclosing environment
+anymore and we can safely say that we have an “ERROR: unknown identifier: foobar”.
+*/
 type Function struct {
 	Parameters []*ast.Identifier   // Parameters are the parameters this Monkey function accepts
 	Body       *ast.BlockStatement // Body is the body of this Monkey function
