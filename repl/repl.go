@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/blazskufc/interpreter_in_go/evaluator"
 	"github.com/blazskufc/interpreter_in_go/lexer"
+	"github.com/blazskufc/interpreter_in_go/object"
 	"github.com/blazskufc/interpreter_in_go/parser"
 	"io"
 	"log"
@@ -30,6 +31,7 @@ const PROMPT = ">> "
 // input and prints out the tokens to "out" io.Writer.
 func Start(in io.Reader, out io.Writer) {
 	scanner := bufio.NewScanner(in)
+	env := object.NewEnvironment()
 	for {
 		_, err := fmt.Fprintf(out, PROMPT)
 		if err != nil {
@@ -50,7 +52,7 @@ func Start(in io.Reader, out io.Writer) {
 			printParserErrors(out, p.Errors())
 			continue
 		}
-		evaluated := evaluator.Eval(program)
+		evaluated := evaluator.Eval(program, env)
 		if evaluated != nil {
 			_, err = io.WriteString(out, evaluated.Inspect())
 			if err != nil {

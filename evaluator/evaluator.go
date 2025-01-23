@@ -24,15 +24,16 @@ var (
 	NULL = &object.Null{}
 )
 
-// Eval takes an node (ast.Node) which is an AST node as the package name suggests, evaluates it and returns appropriate
-// object.Object.
+// Eval takes an node (ast.Node) which is an AST node as the package name suggests and the Environment (*object.Environment).
+// The Environment is used to keep track of names with bound expressions (ast.Expression, ast.LetStatement, ....).
+// It evaluates it and returns appropriate object.Object.
 // If it does not know which object.Object it should return it returns nil!
-func Eval(node ast.Node) object.Object {
+func Eval(node ast.Node, env *object.Environment) object.Object {
 	switch node := node.(type) {
 	case *ast.Program: // Evaluate all the statements in the program
-		return evalProgram(node.Statements)
+		return evalProgram(node.Statements, env)
 	case *ast.ExpressionStatement: // Evaluate the expression part of the ast.ExpressionStatement
-		return Eval(node.Expression)
+		return Eval(node.Expression, env)
 	case *ast.IntegerLiteral: // Evaluates ast.IntegerLiteral
 		return &object.Integer{Value: node.Value}
 	case *ast.Boolean: // Evaluates ast.Boolean
@@ -40,7 +41,7 @@ func Eval(node ast.Node) object.Object {
 		return nativeBoolToBooleanObject(node.Value)
 	case *ast.PrefixExpression: // e.g. "!5" - Everything besides let statement and return statement in Monkey is an ast.Expression
 		// Evaluate the "right" part of the prefixExpression, e.g. The actual value, e.g. the "5" in !5
-		right := Eval(node.Right)
+		right := Eval(node.Right, env)
 		if isError(right) { // If this is an error, stop it from bubbling too far up. It should be returned here!
 			return right
 		}
@@ -48,26 +49,56 @@ func Eval(node ast.Node) object.Object {
 		return evalPrefixExpression(node.Operator, right)
 	case *ast.InfixExpression: // As a reminder this has the specification of: <ast.Expression> <Operator> <ast.Expression>
 		// We evaluate both the left and right Expression first via recursive calls to this Eval function...
-		left := Eval(node.Left)
+		left := Eval(node.Left, env)
 		if isError(left) {
 			return left // If this is an error, stop it from bubbling too far up. It should be returned here!
 		}
-		right := Eval(node.Right)
+		right := Eval(node.Right, env)
 		if isError(right) {
 			return right // If this is an error, stop it from bubbling too far up. It should be returned here!
 		}
 		return evalInfixExpression(node.Operator, left, right)
 
 	case *ast.BlockStatement:
-		return evalBlockStatement(node)
+		return evalBlockStatement(node, env)
 	case *ast.IfExpression:
-		return evalIfExpression(node)
+		return evalIfExpression(node, env)
 	case *ast.ReturnStatement:
-		val := Eval(node.ReturnValue) // Evaluate the return statement beforehand
-		if isError(val) {             // If this is an error, stop it from bubbling too far up. It should be returned here!
+		val := Eval(node.ReturnValue, env) // Evaluate the return statement beforehand
+		if isError(val) {                  // If this is an error, stop it from bubbling too far up. It should be returned here!
 			return val
 		}
 		return &object.ReturnValue{Value: val}
+	case *ast.LetStatement:
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		// Associate the name with the value in the environment!
+		env.Set(node.Name.Value, val)
+	case *ast.Identifier: // We need to parse the actual Identifier's too of course for the case branch above to work!
+		return evalIdentifier(node, env)
+	case *ast.FunctionLiteral:
+		params := node.Parameters
+		body := node.Body
+		// Notice that we pass the env to the function.
+		// This effectively enables closures in Monkey (our object.Function quite literally closes over the environment
+		//as it's known at this point)!!!!
+		return &object.Function{Parameters: params, Env: env, Body: body}
+	case *ast.CallExpression:
+		function := Eval(node.Function, env) // This returns the *object.Function no matter if this is *ast.Identifier or a ast.FunctionLiteral, see branch above!
+		if isError(function) {
+			return function
+		}
+		// We have the evaluate the function arguments first, because of the following.
+		// Let's say we have the following Monkey function:
+		//	let add = fn(x, y) { x + y };
+		//	add(2 + 2, 5 + 5);
+		// We want to pass 4, 10 to add ("add(4, 10)" and not the not yet evaluated expressions
+		args := evalExpressions(node.Arguments, env)
+		if len(args) == 1 && isError(args[0]) { // If there is an error, bail! Don't call the function.
+			return args[0]
+		}
 	}
 	return nil
 }
@@ -75,11 +106,12 @@ func Eval(node ast.Node) object.Object {
 // evalProgram takes an slice of ast.Statement ([]ast.Statement).
 // It evaluates every statement in Statements it got via a call to Eval and storing the result in temporary result
 // variable (of type object.Object).
+// It also accepts the env variable of type object.Environment so it can keep track of expressions bound to names.
 // It returns this variable after all the statements have been executed.
-func evalProgram(statements []ast.Statement) object.Object {
+func evalProgram(statements []ast.Statement, env *object.Environment) object.Object {
 	var result object.Object
 	for _, statement := range statements {
-		result = Eval(statement)
+		result = Eval(statement, env)
 		switch result := result.(type) {
 		case *object.ReturnValue:
 			// Here, in evalProgram, we unwrap object.ReturnValue's, stopping program execution since we're on outer scope
@@ -226,22 +258,23 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 	}
 }
 
-// evalIfExpression accepts an pointer to a *ast.IfExpression.
+// evalIfExpression accepts an pointer to a *ast.IfExpression and an env of Object.Environment so it can keep track of
+// name bound expressions.
 // It then proceeds to evaluate the condition in the *ast.IfExpression.Condition via a recursive call to Eval.
 // If the result is truthy (isTruthy), a ast.IfExpression.Consequence is evaluated via a recursive call to Eval and the result is
 // returned to the caller.
 // If the result of evaluated condition is not truthy, and there is an else branch (ast.IfExpression.Alternative),
 // this alternative/else branch is evaluated via a recursive call to Eval and result is returned to the caller.
 // Else, if condition is not truthy and there is no else/ast.IfExpression.Alternative, a NULL is returned to the caller!
-func evalIfExpression(ie *ast.IfExpression) object.Object {
-	condition := Eval(ie.Condition)
+func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Object {
+	condition := Eval(ie.Condition, env)
 	if isError(condition) {
 		return condition
 	}
 	if isTruthy(condition) {
-		return Eval(ie.Consequence)
+		return Eval(ie.Consequence, env)
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative)
+		return Eval(ie.Alternative, env)
 	} else {
 		return NULL
 	}
@@ -264,16 +297,17 @@ func isTruthy(obj object.Object) bool {
 	}
 }
 
-// evalBlockStatement evaluates block statements {...}.
+// evalBlockStatement evaluates block statements {...}. It accepts a block of type *ast.BlockStatement and the
+// Environment of type object.Environment so it can keep track of name bound expressions.
 // The notable difference between evalBlockStatement and evalProgram is that evalBlockStatement does not unwrap
 // object.ReturnValue, it instead checks if current statement is a object.ReturnValue via a call to object.ReturnValue.Type.
 // It then returns the wrapped object.ReturnValue and not just the wrapped value like evalProgram does.
 // This is done so that the object.ReturnValue is only unwrapped in evalProgram (where it stops further evaluation), which
 // means that nested if's with returns should be parsed correctly.
-func evalBlockStatement(block *ast.BlockStatement) object.Object {
+func evalBlockStatement(block *ast.BlockStatement, env *object.Environment) object.Object {
 	var result object.Object
 	for _, statement := range block.Statements {
-		result = Eval(statement)
+		result = Eval(statement, env)
 		if result != nil {
 			rt := result.Type()
 			// Notice we don't unwrap returnValue object, we just return it back up
@@ -299,4 +333,36 @@ func isError(obj object.Object) bool {
 		return obj.Type() == object.ERROR_OBJ
 	}
 	return false
+}
+
+// evalIdentifier accepts an *ast.Identifier and the Environment (*object.Environment)
+// It then looks into said environment with Environment.Get method for the given *ast.Identifier.Value.
+// It it's not found in the environment, a new object.Error is returned to the caller.
+// Otherwise, a value retrieved from the environment is returned to the caller!
+func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
+	val, ok := env.Get(node.Value)
+	if !ok {
+		return newError("identifier not found: " + node.Value)
+	}
+	return val
+}
+
+// evalExpression takes a slice of ast.Expression ([]ast.Expression) and the environment.
+// It evaluates all the expressions into a slice of []object.Object.
+// It then returns this slice to the caller, provided there was no error in any of the statements.
+// If any error was encountered during the evaluation of any of the statements, a slice of []object.Object with just the
+// error in it is returned to the caller!
+func evalExpressions(
+	exps []ast.Expression,
+	env *object.Environment,
+) []object.Object {
+	var result []object.Object
+	for _, e := range exps {
+		evaluated := Eval(e, env)
+		if isError(evaluated) {
+			return []object.Object{evaluated}
+		}
+		result = append(result, evaluated)
+	}
+	return result
 }

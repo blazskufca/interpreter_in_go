@@ -1,6 +1,11 @@
 package object
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+	"github.com/blazskufc/interpreter_in_go/ast"
+	"strings"
+)
 
 /*
 There are many different ways to build an "object" system (which in this case does not refer to OOP, but to the
@@ -55,6 +60,7 @@ const (
 	NULL_OBJ         = "NULL"
 	RETURN_VALUE_OBJ = "RETURN_VALUE"
 	ERROR_OBJ        = "ERROR"
+	FUNCTION_OBJ     = "FUNCTION"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -135,3 +141,33 @@ func (e *Error) Type() ObjectType { return ERROR_OBJ }
 // Inspect on Error fulfils the Object.Inspect interface method.
 // It returns the result a string -> "ERROR: Error.Message"
 func (e *Error) Inspect() string { return "ERROR: " + e.Message }
+
+// Function represent an Monkey function from the AST *ast.FunctionLiteral in the evaluator/internal object system.
+// It's pretty similar to the ast.FunctionLiteral, except that it does NOT contain the Token filed (since we don't need it
+// in the already parsed AST) and that it DOES contain the Env (object.Environment)!
+type Function struct {
+	Parameters []*ast.Identifier   // Parameters are the parameters this Monkey function accepts
+	Body       *ast.BlockStatement // Body is the body of this Monkey function
+	Env        *Environment        // Env is the environment for this Monkey function. This allows for closures!
+}
+
+// Type on Function type fulfils the Object.Type interface method.
+// It returns a constant, FUNCTION_OBJ.
+func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
+
+// Inspect on Function fulfils the Object.Inspect interface method.
+// It returns the result a stringified Function (Function.Parameters and Function.Body).
+func (f *Function) Inspect() string {
+	var out bytes.Buffer
+	params := []string{}
+	for _, p := range f.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString("fn")
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") {\n")
+	out.WriteString(f.Body.String())
+	out.WriteString("\n}")
+	return out.String()
+}
