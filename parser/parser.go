@@ -127,6 +127,7 @@ const (
 	PRODUCT     // *
 	PREFIX      // -X or !X
 	CALL        // myFunction(X)
+	INDEX
 )
 
 // This is the precedence table for the parser.
@@ -141,6 +142,7 @@ var precedences = map[token.TokenType]int{
 	token.SLASH:    PRODUCT,
 	token.ASTERISK: PRODUCT,
 	token.LPAREN:   CALL,
+	token.LBRACKET: INDEX,
 }
 
 // Main idea in Pratt parser is the association of parsing functions with token types.
@@ -177,6 +179,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
+	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -187,6 +190,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
+	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
 	// This is for parsing function calls / call expressions
 	// <expression>(<comma separated expressions>)
 	// e.g.
@@ -758,11 +762,11 @@ func (p *Parser) parseFunctionParameters() []*ast.Identifier {
 
 // parseCallExpression parses and creates a ast.CallExpression.
 // It does so by accepting a "function ast.Expression" parameter, which is assigned to ast.CallExpression.Function.
-// It then calls parseCallArguments and the results are assigned to ast.CallExpression.Arguments.
+// It then calls parseExpressionList( token.RPAREN ) and the results are assigned to ast.CallExpression.Arguments.
 // Constructed ast.CallExpression is returned.
 func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	exp := &ast.CallExpression{Token: p.curToken, Function: function}
-	exp.Arguments = p.parseCallArguments()
+	exp.Arguments = p.parseExpressionList(token.RPAREN)
 	return exp
 }
 
@@ -799,4 +803,50 @@ func (p *Parser) parseCallArguments() []ast.Expression {
 // parseStringLiteral creates a new ast.StringLiteral ast.Expression and returns a pointer to it.
 func (p *Parser) parseStringLiteral() ast.Expression {
 	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+}
+
+// parseArrayLiteral constructs a new array in Monkey/ast.ArrayLiteral.
+// It get's the ast.ArrayLiteral.Elements via a call to parseExpressionList with the argument token.RBRACKET.
+// It returns said ast.ArrayLiteral after it is constructed.
+func (p *Parser) parseArrayLiteral() ast.Expression {
+	array := &ast.ArrayLiteral{Token: p.curToken}
+
+	array.Elements = p.parseExpressionList(token.RBRACKET)
+
+	return array
+}
+
+// parseExpressionList creates a slice of ast.Expression and returns it.
+// It know's when it should stop adding ast.Expression's to the slice by the end (token.TokenType) argument it receives.
+// It finally returns said slice. This method is very similar to parseExpressionList, except for that this one receives the
+// "end" token.TokenType which is the ending delimiter.
+func (p *Parser) parseExpressionList(end token.TokenType) []ast.Expression {
+	list := []ast.Expression{}
+	if p.peekTokenIs(end) {
+		p.nextToken()
+		return list
+	}
+	p.nextToken()
+	list = append(list, p.parseExpression(LOWEST))
+	for p.peekTokenIs(token.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.parseExpression(LOWEST))
+	}
+	if !p.expectPeek(end) {
+		return nil
+	}
+	return list
+}
+
+// parseIndexExpression/our Pratt parser treats ast.IndexExpression as an infix Expression, meaning
+// "[" in "myArray[0]" is the infix operator, "myArray" is the left operand and "0" is the right operand.
+func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
+	exp := &ast.IndexExpression{Token: p.curToken, Left: left}
+	p.nextToken()
+	exp.Index = p.parseExpression(LOWEST)
+	if !p.expectPeek(token.RBRACKET) {
+		return nil
+	}
+	return exp
 }

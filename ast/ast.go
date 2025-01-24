@@ -385,3 +385,73 @@ func (sl *StringLiteral) TokenLiteral() string { return sl.Token.Literal }
 // String on StringLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
 // It returns stringified contents of StringLiteral (StringLiteral.Token.Literal).
 func (sl *StringLiteral) String() string { return sl.Token.Literal }
+
+// ArrayLiteral represents Monkey Language arrays.
+// ArrayLiteral has a Elements slice of type Expression which represents the array elements.
+type ArrayLiteral struct {
+	Token    token.Token  // Token is the [ token
+	Elements []Expression // Elements are the actual elements in the array. Type does not matter, any Expression is valid!
+}
+
+// expressionNode on ArrayLiteral fulfills the Expression interface.
+func (al *ArrayLiteral) expressionNode() {}
+
+// TokenLiteral on ArrayLiteral fulfills the Node interface.
+// It returns the literal value of the ArrayLiteral.Token.
+func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Literal }
+
+// String on ArrayLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of ArrayLiteral (all the array elements, ArrayLiteral.Elements).
+func (al *ArrayLiteral) String() string {
+	var out bytes.Buffer
+	elements := []string{}
+	for _, el := range al.Elements {
+		elements = append(elements, el.String())
+	}
+	out.WriteString("[")
+	out.WriteString(strings.Join(elements, ", "))
+	out.WriteString("]")
+	return out.String()
+}
+
+// IndexExpression is an index access operator, i.e.
+/*
+<expression>[<expression>]
+
+or in Monkey source code:
+
+myArray[0];
+
+[1, 2, 3, 4][2];
+
+let myArray = [1, 2, 3, 4];
+myArray[2];
+
+myArray[2 + 1];
+
+returnsArray()[1];
+*/
+type IndexExpression struct {
+	Token token.Token // The [ token
+	Left  Expression  // Left is the object that’s being accessed.
+	Index Expression  // Index is the access operator inside the brackets. Index has to produce an integer!
+}
+
+// expressionNode on IndexExpression fulfills the Expression interface.
+func (ie *IndexExpression) expressionNode() {}
+
+// TokenLiteral on IndexExpression fulfills the Node interface.
+// It returns the literal value of the IndexExpression.Token.
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Literal }
+
+// String on IndexExpression type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of IndexExpression (IndexExpression.Left and IndexExpression.Index).
+func (ie *IndexExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("])")
+	return out.String()
+}
