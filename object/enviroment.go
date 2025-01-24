@@ -1,5 +1,7 @@
 package object
 
+import "time"
+
 // Environment is a classic name in interpreters, especially "lisp-y" ones.
 // In reality you can think of it as a wrapper around a map[string]object.Object.
 // It associates strings with evaluated objects.
@@ -13,7 +15,10 @@ type Environment struct {
 // If you want to create a new environment with containing enclosed environment you should call NewEnclosedEnvironment
 // instead!
 func NewEnvironment() *Environment {
-	s := make(map[string]Object)
+	s := map[string]Object{ // This is probably not a very good way to do this...But it's the easiest way to do it and this is my first interpreter...So I have no idea what I'm doing in realty :)
+		"only_time_format":      &String{Value: time.TimeOnly},
+		"date_plus_time_format": &String{Value: time.RFC822},
+	}
 	return &Environment{store: s, outer: nil}
 }
 

@@ -62,6 +62,7 @@ const (
 	ERROR_OBJ        = "ERROR"
 	FUNCTION_OBJ     = "FUNCTION"
 	STRING_OBJ       = "STRING"
+	BUILTIN_OBJ      = "BUILTIN"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -218,3 +219,20 @@ func (s *String) Type() ObjectType { return STRING_OBJ }
 // Inspect on String fulfils the Object.Inspect interface method.
 // It returns the result a stringified String (String.Value).
 func (s *String) Inspect() string { return s.Value }
+
+// BuiltinFunction is a type used to represent functions which are implemented directly in the Monkey interpreter.
+// Like any other Monkey function, they can have one or more arguments.
+type BuiltinFunction func(args ...Object) Object
+
+type Builtin struct {
+	Fn BuiltinFunction // Fn is a BuiltinFunction so a function with none, one, ore more Object arguments, which returns an Object to the caller
+}
+
+// Type on Builtin type fulfils the Object.Type interface method.
+// It returns a constant, BUILTIN_OBJ.
+func (b *Builtin) Type() ObjectType { return BUILTIN_OBJ }
+
+// Inspect on Builtin fulfils the Object.Inspect interface method.
+// It returns the result a stringified a constant string "builtin function" (it's similar to Null.Inspect in this regard;
+// no value is retrieved dynamically when calling Inspect)
+func (b *Builtin) Inspect() string { return "builtin function" }

@@ -363,14 +363,18 @@ func isError(obj object.Object) bool {
 
 // evalIdentifier accepts an *ast.Identifier and the Environment (*object.Environment)
 // It then looks into said environment with Environment.Get method for the given *ast.Identifier.Value.
-// It it's not found in the environment, a new object.Error is returned to the caller.
+// It it's not found in the environment, it looks into object.builtins environment for that identifier (in case the name
+// is a builtin function, for example).
+// If neither, a new object.Error is created and returned to the caller!
 // Otherwise, a value retrieved from the environment is returned to the caller!
 func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
-	val, ok := env.Get(node.Value)
-	if !ok {
-		return newError("identifier not found: " + node.Value)
+	if val, ok := env.Get(node.Value); ok {
+		return val
 	}
-	return val
+	if builtin, ok := builtins[node.Value]; ok {
+		return builtin
+	}
+	return newError("identifier not found: " + node.Value)
 }
 
 // evalExpression takes a slice of ast.Expression ([]ast.Expression) and the environment.
@@ -393,20 +397,24 @@ func evalExpressions(
 	return result
 }
 
-// applyFunction first check if the fn parameter can be cast to *object.Function at all.
-// If not, an object.Error is returned to the caller.
-// It then calls extendFunctionEnv to create a new enclosed environment from the environment which the object.Function
-// carries around.
-// It then evaluates the function body in this new enclosed environment.
-// A result of a call to unwrapReturnValue is returned to the caller.
+// applyFunction does a type switch on argument "fn".
+// If the fn can be cast to *object.Function it creates a new extended environment via a call to extendFunctionEnv,
+// which creates a new extended environment, it evaluates function parameters in it, then a recursive call is made to
+// Eval to actually evaluate this function with it's correctly set environment set. Lastly it returns a call to
+// unwrapReturnValue.
+// On the other hand, if the function is cast to *object.Builtin it returns *object.Builtin.Fn call with arguments passed to it.
+// If neither can be accomplished a new object.Error is returned to the caller!
 func applyFunction(fn object.Object, args []object.Object) object.Object {
-	function, ok := fn.(*object.Function)
-	if !ok {
+	switch fn := fn.(type) {
+	case *object.Function:
+		extendedEnv := extendFunctionEnv(fn, args)
+		evaluated := Eval(fn.Body, extendedEnv)
+		return unwrapReturnValue(evaluated)
+	case *object.Builtin:
+		return fn.Fn(args...)
+	default:
 		return newError("not a function: %s", fn.Type())
 	}
-	extendedEnv := extendFunctionEnv(function, args)
-	evaluated := Eval(function.Body, extendedEnv)
-	return unwrapReturnValue(evaluated)
 }
 
 // extendFunctionEnv create a new enclosed environment via a call to object.NewEnclosedEnvironment.
@@ -454,9 +462,9 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 	case "+":
 		return &object.String{Value: leftVal + rightVal}
 	case "==":
-		return &object.Boolean{Value: leftVal == rightVal}
+		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":
-		return &object.Boolean{Value: leftVal != rightVal}
+		return nativeBoolToBooleanObject(leftVal == rightVal)
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
