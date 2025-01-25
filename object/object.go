@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/blazskufc/interpreter_in_go/ast"
+	"hash/fnv"
 	"strings"
 )
 
@@ -63,6 +64,8 @@ const (
 	FUNCTION_OBJ     = "FUNCTION"
 	STRING_OBJ       = "STRING"
 	BUILTIN_OBJ      = "BUILTIN"
+	ARRAY_OBJ        = "ARRAY"
+	HASH_OBJ         = "HASH"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -236,3 +239,162 @@ func (b *Builtin) Type() ObjectType { return BUILTIN_OBJ }
 // It returns the result a stringified a constant string "builtin function" (it's similar to Null.Inspect in this regard;
 // no value is retrieved dynamically when calling Inspect)
 func (b *Builtin) Inspect() string { return "builtin function" }
+
+// Array in Monkey, and therefore in internal object definition, is simple; it's just a list/slice of Object.
+type Array struct {
+	Elements []Object // Elements are the elements the array contains, as you might suspect.
+}
+
+// Type on Array type fulfils the Object.Type interface method.
+// It returns a constant, ARRAY_OBJ.
+func (ao *Array) Type() ObjectType { return ARRAY_OBJ }
+
+// Inspect on Array fulfils the Object.Inspect interface method.
+// It returns the result a stringified Array (Array.Elements).
+func (ao *Array) Inspect() string {
+	var out bytes.Buffer
+	elements := []string{}
+	for _, e := range ao.Elements {
+		elements = append(elements, e.Inspect())
+	}
+	out.WriteString("[")
+	out.WriteString(strings.Join(elements, ", "))
+	out.WriteString("]")
+	return out.String()
+}
+
+// HashKey represents the hashed key.
+/*
+Whereas implementing other Object's in the system is a fairly straight forward undertaking, creating hash require more
+effort.
+
+Let’s say we defined a new object.Hash type like this:
+
+type Hash struct {
+	Pairs map[Object]Object
+}
+
+But with this definition, how would we fill the Pairs map? And more importantly, how would we get values back out of it?
+
+Consider this piece of Monkey code:
+
+let hash = {"name": "Monkey"};
+hash["name"]
+
+Let’s say we are evaluating these two lines and are using the object.Hash definition from above.
+
+When evaluating the hash literal in the first line we take every key-value pair and put it in the map[Object]Object map,
+resulting in .Pairs having the following mapping: an *object.String wit String.Value being "name" mapped to an
+*object.String with String.Value being "Monkey".
+
+So far, so good. But the problem arises in the second line where we use an index expression to try to access the "Monkey" string
+
+In this second line the "name" string literal of the index expression evaluates to a new, freshly allocated *object.String.
+
+And even though this new *object.String also contains "name" in its String.Value field, just like the other
+*object.String in Pairs, we can’t use the new one to retrieve "Monkey"....
+
+The reason for this is that they’re pointers pointing to different memory locations! Comparing these pointers would tell us that they’re not equal!
+
+Here is an example that demonstrates the problem we’d face with the object.Hash implementation from above:
+
+name1 := &object.String{Value: "name"}
+
+monkey := &object.String{Value: "Monkey"}
+
+pairs := map[object.Object]object.Object{}
+
+pairs[name1] = monkey
+
+fmt.Printf("pairs[name1]=%+v\n", pairs[name1]) // => pairs[name1]=&{Value:Monkey}
+
+name2 := &object.String{Value: "name"}
+
+fmt.Printf("pairs[name2]=%+v\n", pairs[name2]) // => pairs[name2]=<nil>
+
+fmt.Printf("(name1 == name2)=%t\n", name1 == name2) // => (name1 == name2)=false
+
+What we need is a way to generate hashes for objects that we can easily compare and use as hash keys in our object.Hash.
+
+We need to be able to generate a hash key for an *object.String that’s comparable and equal to the hash key of another *object.String with
+the same .Value. The same goes for *object.Integer and *object.Boolean.
+
+But the hash keys for an *object.String must never be equal to the hash key for an *object.Integer or an *object.Boolean.
+Between types the hash keys always have to differ.
+
+This is what the HashKey accomplishes
+*/
+type HashKey struct {
+	Type  ObjectType // Type is the type of the Object this hash is for
+	Value uint64     // Value is the actual hash of the object.
+}
+
+// HashKey on Boolean implements the hashing of booleans. It creates a new HashKey where the value is 1 for object.Boolean
+// with the value of true and 0 for the opposite.
+// This constructed HashKey is returned to the caller.
+func (b *Boolean) HashKey() HashKey {
+	var value uint64
+	if b.Value {
+		value = 1
+	} else {
+		value = 0
+	}
+	return HashKey{Type: b.Type(), Value: value}
+}
+
+// HashKey on type Integer is simple and straightforward. It returns a uint64 cast value of Integer.Value as the HashKey.Value
+// of the newly created hash key. This new HashKey is returned to the caller.
+func (i *Integer) HashKey() HashKey {
+	return HashKey{Type: i.Type(), Value: uint64(i.Value)}
+}
+
+// HashKey on type String firstly creates a new fnv.New64a.
+// It uses fnv.New64.Sum64() on String.Value which becomes the HashKey.Value of the newly created HashKey. This
+// new hash key is returned to the caller!
+// Note that Hash map in monkey does not implement open addressing/separate chaining for now, so you're at a small risk
+// of a hash collision.
+//
+// TODO: Implement open addressing / separate chaining for the hash maps in Monkey!
+func (s *String) HashKey() HashKey {
+	h := fnv.New64a()
+	h.Write([]byte(s.Value))
+	return HashKey{Type: s.Type(), Value: h.Sum64()}
+}
+
+// HashPair is used as the value field in Monkey hash map.
+type HashPair struct {
+	Key   Object // Key is the name under which the Value is stored in Monkey hash map
+	Value Object // Value is the value which is bound to Key in Monkey hash map
+}
+
+// Hash represents hash maps in Monkey.
+// It consists of Pairs, which is a map[ HashKey ] HashPair.
+// Note that maps don't implement open addressing/separate chaining for now, collision are very much possible, however unlikely,
+// and are NOT addressed in any way!
+type Hash struct {
+	Pairs map[HashKey]HashPair // Pairs represents the actual contents of a hash map in Monkey
+}
+
+// Type on Hash type fulfils the Object.Type interface method.
+// t returns a constant, HASH_OBJ.
+func (h *Hash) Type() ObjectType { return HASH_OBJ }
+
+// Inspect on Hash fulfils the Object.Inspect interface method.
+// It stringifies the Hash.Pairs map and reuturns it.
+func (h *Hash) Inspect() string {
+	var out bytes.Buffer
+	pairs := []string{}
+	for _, pair := range h.Pairs {
+		pairs = append(pairs, fmt.Sprintf("%s: %s",
+			pair.Key.Inspect(), pair.Value.Inspect()))
+	}
+	out.WriteString("{")
+	out.WriteString(strings.Join(pairs, ", "))
+	out.WriteString("}")
+	return out.String()
+}
+
+// Hashable interface is an easy way for us to know which Object's can crete HashKey's during evaluation!
+type Hashable interface {
+	HashKey() HashKey
+}

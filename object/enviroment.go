@@ -16,8 +16,8 @@ type Environment struct {
 // instead!
 func NewEnvironment() *Environment {
 	s := map[string]Object{ // This is probably not a very good way to do this...But it's the easiest way to do it and this is my first interpreter...So I have no idea what I'm doing in realty :)
-		"only_time_format":      &String{Value: time.TimeOnly},
-		"date_plus_time_format": &String{Value: time.RFC822},
+		"only_time_format": &String{Value: time.TimeOnly},
+		"date_time_format": &String{Value: time.RFC822},
 	}
 	return &Environment{store: s, outer: nil}
 }

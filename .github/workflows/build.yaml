@@ -1,0 +1,60 @@
+name: Build Go Binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: windows
+            arch: arm64
+          - os: freebsd
+            arch: amd64
+          - os: openbsd
+            arch: amd64
+          - os: netbsd
+            arch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          if [ "$GOOS" = "windows" ]; then
+            OUTPUT_NAME="monkey-REPL-$GOOS-$GOARCH.exe"
+          else
+            OUTPUT_NAME="monkey-REPL-$GOOS-$GOARCH"
+          fi
+          
+          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+            -o "$OUTPUT_NAME" \
+            -ldflags '-s -w -extldflags "-static"' \
+            ./main.go
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monkey-${{ matrix.os }}-${{ matrix.arch }}
+          path: monkey-*

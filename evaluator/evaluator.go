@@ -123,6 +123,25 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return applyFunction(function, args)
 	case *ast.StringLiteral:
 		return &object.String{Value: node.Value}
+	case *ast.ArrayLiteral:
+		elements := evalExpressions(node.Elements, env)
+		if len(elements) == 1 && isError(elements[0]) {
+			return elements[0]
+		}
+		return &object.Array{Elements: elements}
+	case *ast.IndexExpression:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		// Index or right part of the infix expression
+		index := Eval(node.Index, env)
+		if isError(index) {
+			return index
+		}
+		return evalIndexExpression(left, index)
+	case *ast.HashLiteral:
+		return evalHashLiteral(node, env)
 	}
 	return nil
 }
@@ -423,8 +442,7 @@ func applyFunction(fn object.Object, args []object.Object) object.Object {
 // Finally it returns a pointer to this new, enclosed environment!
 // Note: See comment and example in evaluator_test.go/TestClosure for why we're creating an enclosed environment from
 // the one in object.Function and not a global environment. Basically so it's we can have closures in Monkey!
-func extendFunctionEnv(fn *object.Function, args []object.Object,
-) *object.Environment {
+func extendFunctionEnv(fn *object.Function, args []object.Object) *object.Environment {
 	env := object.NewEnclosedEnvironment(fn.Env)
 	for paramIdx, param := range fn.Parameters {
 		env.Set(param.Value, args[paramIdx])
@@ -464,8 +482,94 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 	case "==":
 		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":
-		return nativeBoolToBooleanObject(leftVal == rightVal)
+		return nativeBoolToBooleanObject(leftVal != rightVal)
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
+}
+
+// evalIndexExpression does check types of left and index arguments and then call the appropriate sub-function.
+// If it does not know what it should call, it returns an object.Error to the caller.
+// Otherwise a result from a call to subroutine is returned.
+func evalIndexExpression(left, index object.Object) object.Object {
+	switch {
+	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+		return evalArrayIndexExpression(left, index)
+	case left.Type() == object.HASH_OBJ:
+		return evalHashIndexExpression(left, index)
+	default:
+		return newError("index operator not supported: %s", left.Type())
+	}
+}
+
+// evalArrayIndexExpression check if the index is out of bound on the given array (left).
+// If it is out of bound, it returns a NULL!
+// If it's not it returns the element at specified index.
+// Also if left can not be type asserted to *object.Array or index can not be type asserted to *object.Integer, a
+// object.Error is returned to the caller!
+func evalArrayIndexExpression(left, index object.Object) object.Object {
+	arrayObject, ok := left.(*object.Array)
+	if !ok {
+		return newError("not an array: %s", left.Type())
+	}
+	idxInteger, ok := index.(*object.Integer)
+	if !ok {
+		return newError("not an integer: %s", index.Type())
+	}
+	idx := idxInteger.Value
+	maxElements := int64(len(arrayObject.Elements) - 1)
+	if idx < 0 || idx > maxElements {
+		return NULL
+	}
+
+	return arrayObject.Elements[idx]
+}
+
+// EvalHashLiteral creates a new *object.Hash and returns it.
+// It iterates over the ast.HashLiteral.Pairs and evaluates key node and value node via a recursive call to Eval.
+// It also asserts that the kay node implements object.Hashable interafce (otherwise it’s unusable as a hash key).
+// If value node does not produce and error during it's recursive call to Eval that means we can add the key-value
+// pair to the object.HashPair.Pairs map.
+// At the end a pointer to object.Hash is returned to the caller if there were no errors encountered during evaluation
+// of key-value nodes.
+func evalHashLiteral(node *ast.HashLiteral, env *object.Environment) object.Object {
+	pairs := make(map[object.HashKey]object.HashPair)
+	for keyNode, valueNode := range node.Pairs {
+		key := Eval(keyNode, env)
+		if isError(key) {
+			return key
+		}
+		hashKey, ok := key.(object.Hashable)
+		if !ok {
+			return newError("invalid hash key: %s", key.Type())
+		}
+		value := Eval(valueNode, env)
+		if isError(value) {
+			return value
+		}
+		hashed := hashKey.HashKey()
+		pairs[hashed] = object.HashPair{Key: key, Value: value}
+	}
+	return &object.Hash{Pairs: pairs}
+}
+
+// evalHashIndexExpression evaluates ast.InfixExpression: <hashmap>[<hash key>].
+// It asserts that left is *object.Hash, if it's not an object.Error is returned.
+// It asserts that index is object.Hashable, if it's not an object.Error is returned.
+// It then tries to retrieve the value under that key from the given hash map.
+// If the key does not exist, NULL is returned to the caller. Otherwise, it returns object.Hash.Pairs.Value to the caller.
+func evalHashIndexExpression(left, index object.Object) object.Object {
+	hashObject, ok := left.(*object.Hash)
+	if !ok {
+		return newError("can not type assert left to *object.Hash: %s", left.Type())
+	}
+	key, ok := index.(object.Hashable)
+	if !ok {
+		return newError("unusable as hash key: %s", index.Type())
+	}
+	pair, ok := hashObject.Pairs[key.HashKey()]
+	if !ok {
+		return NULL
+	}
+	return pair.Value
 }

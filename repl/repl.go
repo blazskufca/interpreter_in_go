@@ -53,7 +53,7 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 		evaluated := evaluator.Eval(program, env)
-		if evaluated != nil {
+		if evaluated != nil && evaluated.Type() == object.ERROR_OBJ {
 			_, err = io.WriteString(out, evaluated.Inspect())
 			if err != nil {
 				log.Printf("failed to write to output: %v", err)
@@ -65,7 +65,7 @@ func Start(in io.Reader, out io.Writer) {
 				continue
 			}
 		}
-		// The old parse printout - > Print's the AST structure
+		//The old parse printout - > Print's the AST structure
 		//_, err = io.WriteString(out, program.String())
 		//if err != nil {
 		//	log.Printf("failed to write to output: %v", err)

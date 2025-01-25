@@ -455,3 +455,49 @@ func (ie *IndexExpression) String() string {
 	out.WriteString("])")
 	return out.String()
 }
+
+// HashLiteral follow this structure: {<expression> : <expression>, <expression> : <expression>, ... };...
+// Each pair consists of two expressions. One produces the hash key and one produces the value.
+// The only admissible data types for hash keys are StringLiteral, IntegerLiteral and Boolean.
+// But we can’t enforce that in the parser! Instead, we’ll have to validate hash key types in the evaluation stage and
+// generate possible errors there.
+/*
+That’s because a lot of different expressions can produce strings, integers or booleans. Not just
+their literal forms. Enforcing the data type of hash keys in the parsing stage would prevent us
+from doing something like this:
+
+let key = "name";
+
+let hash = {key: "Monkey"};
+
+Here key evaluates to "name" and is thus totally valid as a hash key, even though it’s an identifier.
+
+In order to allow this, we need to allow any Expression as a key and any Expression as a value in a hash literal!
+
+At least in the parsing stage.
+*/
+type HashLiteral struct {
+	Token token.Token               // Token is the '{' token
+	Pairs map[Expression]Expression // Pairs is a map[Expression]Expression...See HashLiteral type docs as to why!
+}
+
+// expressionNode on type HashLiteral fulfills the Expression interface.
+func (hl *HashLiteral) expressionNode() {}
+
+// TokenLiteral on type HashLiteral fulfils the Node interface.
+// It returns the literal value of HashLiteral.Token.
+func (hl *HashLiteral) TokenLiteral() string { return hl.Token.Literal }
+
+// String on HashLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of HashLiteral (HashLiteral.Pairs is stingified).
+func (hl *HashLiteral) String() string {
+	var out bytes.Buffer
+	pairs := []string{}
+	for key, value := range hl.Pairs {
+		pairs = append(pairs, key.String()+":"+value.String())
+	}
+	out.WriteString("{")
+	out.WriteString(strings.Join(pairs, ", "))
+	out.WriteString("}")
+	return out.String()
+}

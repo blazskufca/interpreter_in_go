@@ -180,6 +180,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FUNCTION, p.parseFunctionLiteral)
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
+	p.registerPrefix(token.LBRACE, p.parseHashLiteral)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -558,7 +559,7 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 	// Since the ast.IntegerLiteral.Value is an int64 we have to transform the token literal value to an int64
 	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	if err != nil { // If we can't transform the token literal from string to int64 that's a parsing error, so add it to parser errors
-		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
+		msg := fmt.Sprintf("could not parse %q as integer due to %v", p.curToken.Literal, err)
 		p.errors = append(p.errors, msg)
 		return nil
 	}
@@ -849,4 +850,30 @@ func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
 		return nil
 	}
 	return exp
+}
+
+// parseHashLiteral constructs a new ast.HashLiteral and returns a pointer to it.
+// It loops over the key value expressions pairs, checking for the closing brace token.RBRACE and calling parseExpression(LOWEST)
+// on each key, value it encounters.
+// It then inserts these parsed key-value pairs into ast.HashLiteral.Pairs.
+func (p *Parser) parseHashLiteral() ast.Expression {
+	hash := &ast.HashLiteral{Token: p.curToken}
+	hash.Pairs = make(map[ast.Expression]ast.Expression)
+	for !p.peekTokenIs(token.RBRACE) { // {<expression> : <expression>, <expression>:<expression,...}
+		p.nextToken()
+		key := p.parseExpression(LOWEST)
+		if !p.expectPeek(token.COLON) { // <expression> : <expression>
+			return nil
+		}
+		p.nextToken()
+		value := p.parseExpression(LOWEST)
+		hash.Pairs[key] = value // Now we have two expressions, the key and the value, we can just add them to the map!
+		if !p.peekTokenIs(token.RBRACE) && !p.expectPeek(token.COMMA) {
+			return nil
+		}
+	}
+	if !p.expectPeek(token.RBRACE) {
+		return nil
+	}
+	return hash
 }
