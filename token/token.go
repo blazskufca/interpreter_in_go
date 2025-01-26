@@ -43,6 +43,7 @@ const (
 	RETURN   = "RETURN"
 
 	STRING = "STRING"
+	MACRO  = "MACRO"
 )
 
 type TokenType string
@@ -56,6 +57,7 @@ var keywords = map[string]TokenType{
 	"if":     IF,
 	"else":   ELSE,
 	"return": RETURN,
+	"macro":  MACRO,
 }
 
 type Token struct {

@@ -501,3 +501,34 @@ func (hl *HashLiteral) String() string {
 	out.WriteString("}")
 	return out.String()
 }
+
+// MacroLiteral is a macro expression literal, i.e. macro(< Identifier, Identifier, Identifier ...>) < BlockStatement >.
+// It's very similar to FunctionLiteral, deviates only in name.
+type MacroLiteral struct {
+	Token      token.Token     // Token is the "macro" token
+	Parameters []*Identifier   // Parameters is a slice of *Identifier's, i.e. the function arguments the macro will receive
+	Body       *BlockStatement // Body is the body of the macro, i.e. the actual code which the macro should execute
+}
+
+// expressionNode on type MacroLiteral fulfills the Expression interface.
+func (ml *MacroLiteral) expressionNode() {}
+
+// TokenLiteral on type MacroLiteral fulfils the Node interface.
+// It returns the literal value of MacroLiteral.Token.
+func (ml *MacroLiteral) TokenLiteral() string { return ml.Token.Literal }
+
+// String on MacroLiteral type satisfies the Node interface (and consequently the fmt.Stringer).
+// It returns stringified contents of MacroLiteral (MacroLiteral.Parameters, MacroLiteral.Token and MacroLiteral.Body).
+func (ml *MacroLiteral) String() string {
+	var out bytes.Buffer
+	params := []string{}
+	for _, p := range ml.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString(ml.TokenLiteral())
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") ")
+	out.WriteString(ml.Body.String())
+	return out.String()
+}

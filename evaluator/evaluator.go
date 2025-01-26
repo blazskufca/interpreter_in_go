@@ -107,6 +107,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		//as it's known at this point)!!!!
 		return &object.Function{Parameters: params, Env: env, Body: body}
 	case *ast.CallExpression:
+		// If the token in the call expression is a "quote" from quote macro system, we DON'T want to evaluate arguments,
+		// since that defeats the whole purpose of "quote"
+		if node.Function.TokenLiteral() == "quote" {
+			// Environment is passed to unquote call macros, i.e. unquote calls are evaluated in this *object.Environment
+			return quote(node.Arguments[0], env)
+		}
 		function := Eval(node.Function, env) // This returns the *object.Function no matter if this is *ast.Identifier or a ast.FunctionLiteral, see branch above!
 		if isError(function) {
 			return function

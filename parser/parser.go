@@ -181,6 +181,7 @@ func NewParser(lex *lexer.Lexer) *Parser {
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
 	p.registerPrefix(token.LBRACE, p.parseHashLiteral)
+	p.registerPrefix(token.MACRO, p.parseMacroLiteral)
 	// Registering infixParseFn for tokens
 	// Note that every infix operator gets associated with the same function in this case
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -876,4 +877,24 @@ func (p *Parser) parseHashLiteral() ast.Expression {
 		return nil
 	}
 	return hash
+}
+
+// parseMacroLiteral parses macro literal in Monkey -> macro(<list of ast.Identifier's>) <ast.BlockStatement>.
+// Since macro and function literals are basically identical in terms of structure, parseMacroLiteral is almost identical
+// to parseFunctionLiteral.
+func (p *Parser) parseMacroLiteral() ast.Expression {
+	lit := &ast.MacroLiteral{Token: p.curToken} // The 'macro' token
+	// Follows the macro( <- we're here
+	if !p.expectPeek(token.LPAREN) {
+		return nil // Or if we're not here, that's bad syntax
+	}
+	// Get the list of parameters
+	lit.Parameters = p.parseFunctionParameters()
+	//  macro( [<Identifier>, <Identifier>, <Identifier>, <Identifier>, ...) { <- We're here
+	if !p.expectPeek(token.LBRACE) {
+		return nil // If we are not, that's bad syntax again
+	}
+	// Parse out the actual body
+	lit.Body = p.parseBlockStatement()
+	return lit
 }

@@ -66,6 +66,8 @@ const (
 	BUILTIN_OBJ      = "BUILTIN"
 	ARRAY_OBJ        = "ARRAY"
 	HASH_OBJ         = "HASH"
+	QUOTE_OBJ        = "QUOTE"
+	MACRO_OBJ        = "MACRO"
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -397,4 +399,50 @@ func (h *Hash) Inspect() string {
 // Hashable interface is an easy way for us to know which Object's can crete HashKey's during evaluation!
 type Hashable interface {
 	HashKey() HashKey
+}
+
+// Quote will be only used inside the Macro system.
+// When Quote is called inside this Macro system it stops its argument from being evaluated, instead returning ast.Node
+// representing the argument.
+type Quote struct {
+	Node ast.Node // Node is the unevaluated AST node representing the argument.
+}
+
+// Type on Quote type fulfils the Object.Type interface method.
+// It returns a constant, QUOTE_OBJ.
+func (q *Quote) Type() ObjectType { return QUOTE_OBJ }
+
+// Inspect on Quote fulfils the Object.Inspect interface method.
+// It returns resulting value from a call to Quote.Node.String formatted in a string.
+func (q *Quote) Inspect() string {
+	return "QUOTE(" + q.Node.String() + ")"
+}
+
+// Macro is Monkey macro. Since macro and functions are almost identical, Macro is also almost identical to Function in all
+// but the name...
+type Macro struct {
+	Parameters []*ast.Identifier   // Parameters is a []*ast.Identifier which the macro will receive
+	Body       *ast.BlockStatement // Body is the body of the macro, as you might expect
+	Env        *Environment        // Env is the Environment in which the macro's Body will execute
+}
+
+// Type on Macro type fulfils the Object.Type interface method.
+// It returns a constant, MACRO_OBJ.
+func (m *Macro) Type() ObjectType { return MACRO_OBJ }
+
+// Inspect on Macro fulfils the Object.Inspect interface method.
+// It returns stringified Macro (Macro.Parameters and Macro.Body)
+func (m *Macro) Inspect() string {
+	var out bytes.Buffer
+	params := []string{}
+	for _, p := range m.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString("macro")
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") {\n")
+	out.WriteString(m.Body.String())
+	out.WriteString("\n}")
+	return out.String()
 }
