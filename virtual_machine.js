@@ -45,6 +45,18 @@ on weather the opcode need an operand/parameter or not. They don't have to be 1 
 not a requirement. Think about the following instruction:
 
                                                         push 300
+                                                           |
+                                                           ∨
+                                    <some 8-bit/1byte opcode> 00000001 00101100
+                                                              -------- --------
+                                                                  |       |
+                                                                  v       |
+                                                              1st byte    |
+                                                              of operand  |
+                                                                          |
+                                                                          v
+                                                                        2nd byte
+                                                                        of operand
 
 The "300" integer operand here could be encoded as 2 bytes since the number it's trying to encode is larger than 255.
 
