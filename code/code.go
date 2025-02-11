@@ -41,10 +41,17 @@ Three, the result of 1 + 2, replaces both operands on the stack and is now on to
 // Opcode is always 1 byte long, operands can be multibyte.
 
 const (
-	// OpConstant is a ""pointer"" into the compilers constants pool
-	OpConstant Opcode = iota
-	// OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
-	OpAdd
+	OpConstant    Opcode = iota // OpConstant is a ""pointer"" into the compilers constants pool
+	OpAdd                       // OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
+	OpPop                       // OpPop instructs the Monkey virtual machine to pop the topmost object of its stack.
+	OpSub                       // OpSub is a byte code instruction for arithmetic - operations
+	OpMul                       // OpMul is the bytecode instruction for arithmetic * operations
+	OpDiv                       // OpDiv is the bytecode instruction for arithmetic / operations
+	OpTrue                      // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpFalse                     // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpEqual                     // OpEqual represents the == in bytecode
+	OpNotEqual                  // OpNotEqual represents the != in bytecode
+	OpGreaterThan               // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
 )
 
 type Instructions []byte
@@ -94,11 +101,42 @@ type Definition struct {
 /*
 OpConstant: An index into bytecode's/compiler.Compiler's constant pool. It has a single 2 byte operand, which is the index.
 
+OpPop: Instruct the Monkey vm.VM to pop the topmost element of the stack. It has no operands.
+
+ARITHMETIC OPERATIONS:
+
 OpAdd: Is the OPCODE for additions on the vm.VM's stack. It has no operands.
+
+OpSub: Instruct the Monkey vm.VM to subtract the last two elements on the stack. It has no operands.
+
+OpMul: Instruct the Monkey vm.VM to multiply the last two elements on the stack. It has no operands.
+
+OpDiv: Instruct the Monkey vm.VM to divide the last two elements on the stack. It has no operands.
+
+BOOLEANS:
+
+OpTrue: Causes the vm.VM to push a object.Boolean with a value of true onto its stack. It has no operands.
+
+OpFalse: Causes the vm.VM to push a object.Boolean with a value of false onto its stack. It has no operands.
+
+OpEqual: Compares the two boolean/truthy objects if they are equal. It has no operands.
+
+OpNotEqual: Compares the two boolean/truthy objects if they are not equal. It has no operands.
+
+OpGreaterThan: Compares the two boolean/truthy objects if left is more than right. It has no operands.
 */
 var definitions = map[Opcode]*Definition{
-	OpConstant: {"OpConstant", []int{2}},
-	OpAdd:      {"OpAdd", []int{}},
+	OpConstant:    {"OpConstant", []int{2}},
+	OpAdd:         {"OpAdd", []int{}},
+	OpPop:         {"OpPop", []int{}},
+	OpSub:         {"OpSub", []int{}},
+	OpMul:         {"OpMul", []int{}},
+	OpDiv:         {"OpDiv", []int{}},
+	OpTrue:        {"OpTrue", []int{}},
+	OpFalse:       {"OpFalse", []int{}},
+	OpEqual:       {"OpEqual", []int{}},
+	OpNotEqual:    {"OpNotEqual", []int{}},
+	OpGreaterThan: {"OpGreaterThan", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.

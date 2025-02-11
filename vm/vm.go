@@ -2,12 +2,19 @@ package vm
 
 import (
 	"errors"
+	"fmt"
 	"github.com/blazskufc/interpreter_in_go/code"
 	"github.com/blazskufc/interpreter_in_go/compiler"
 	"github.com/blazskufc/interpreter_in_go/object"
 )
 
 const StackSize = 2048
+
+// True is a global *object.Boolean with a value of true which the Monkey VM reuses anytime it needs a true boolean.
+var True = &object.Boolean{Value: true}
+
+// False is a global *object.Boolean with a value of false which the Monkey VM reuses anytime it needs a false boolean.
+var False = &object.Boolean{Value: false}
 
 // VM represent a Monkey Virtual Machine - The heart of the bytecode interpreter, which executes/evaluates bytecode
 // produced by compiler.Compiler.
@@ -36,11 +43,21 @@ func New(bytecode *compiler.Bytecode) *VM {
 
 // StackTop returns an object.Object on top of the stack, object at position VM.stack[VM.sp - 1], to the caller.
 // If the VM stack is empty, nil is returned to the caller instead!
+// This is a DEPRECATED method. You probably want to call LastPoppedStackElem instead, since VM auto-cleans the stack
+// with expression statements and similar, meaning this method will give you incorrect results.
 func (vm *VM) StackTop() object.Object {
 	if vm.sp == 0 {
 		return nil
 	}
 	return vm.stack[vm.sp-1]
+}
+
+// LastPoppedStackElem will return the last object.Object which the VM has popped of its stack.
+func (vm *VM) LastPoppedStackElem() object.Object {
+	// This works because our vm.sp always points at the NEXT spot on the stack (i.e. FREE SPOT where the next element will be pushed).
+	// But we pop by just decrementing the stack pointer...We don't remove them from the underlying stack implementation (slice), they are not set to nil...
+	// that spot is just marked as free, meaning we can simpy check what was there
+	return vm.stack[vm.sp]
 }
 
 // Run is the heartbeat itself of the Monkey virtual machine, if you take analogy of the VM structure being a heart.
@@ -65,21 +82,126 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
-		case code.OpAdd:
-			leftValue, ok := vm.pop().(*object.Integer)
-			if !ok {
-				return errors.New(string("invalid operand type on the left side: " + leftValue.Type()))
+		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv:
+			err := vm.executeBinaryOperation(OPCODE)
+			if err != nil {
+				return err
 			}
-			rightValue, ok := vm.pop().(*object.Integer)
-			if !ok {
-				return errors.New(string("invalid operand type on the right side: " + rightValue.Type()))
+		case code.OpPop:
+			_ = vm.pop()
+		case code.OpTrue:
+			err := vm.push(True)
+			if err != nil {
+				return err
 			}
-			if err := vm.push(&object.Integer{Value: leftValue.Value + rightValue.Value}); err != nil {
+		case code.OpFalse:
+			err := vm.push(False)
+			if err != nil {
+				return err
+			}
+		case code.OpEqual, code.OpNotEqual, code.OpGreaterThan:
+			err := vm.executeComparison(OPCODE)
+			if err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// executeComparison tries to evaluate boolean expressions (true != false, etc...) on the last two stack objects.
+// If it fails an error is returned to the caller otherwise the boolean expression is evaluated, the operands are popped
+// from the stack and the result is placed on it.
+func (vm *VM) executeComparison(OPCODE code.Opcode) error {
+	right, left := vm.pop(), vm.pop()
+	if left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ {
+		return vm.executeIntegerComparison(OPCODE, left, right)
+
+	}
+	switch OPCODE {
+	case code.OpEqual:
+		return vm.push(nativeBoolToBooleanObject(right == left))
+	case code.OpNotEqual:
+		return vm.push(nativeBoolToBooleanObject(right != left))
+	default:
+		return fmt.Errorf("unknown operator: %d (%s %s)", OPCODE, left.Type(), right.Type())
+	}
+}
+
+// executeIntegerComparison is similar to executeComparison, but it's specific to *object.Integer objects.
+// Both the left and the right have to be of this type...
+func (vm *VM) executeIntegerComparison(op code.Opcode, left, right object.Object) error {
+	leftIntegerObject, ok := left.(*object.Integer)
+	if !ok {
+		return errors.New("left object is not an integer: " + string(left.Type()))
+	}
+	rightIntegerObject, ok := right.(*object.Integer)
+	if !ok {
+		return errors.New("right object is not an integer: " + string(right.Type()))
+	}
+	leftValue, rightValue := leftIntegerObject.Value, rightIntegerObject.Value
+	switch op {
+	case code.OpEqual:
+		return vm.push(nativeBoolToBooleanObject(rightValue == leftValue))
+	case code.OpNotEqual:
+		return vm.push(nativeBoolToBooleanObject(rightValue != leftValue))
+	case code.OpGreaterThan:
+		return vm.push(nativeBoolToBooleanObject(leftValue > rightValue))
+	default:
+		return fmt.Errorf("unknown operator: %d", op)
+	}
+}
+
+// nativeBoolToBooleanObject transforms go booleans (true, false) into Monkey booleans (True, False).
+// It is just a simple helper function.
+func nativeBoolToBooleanObject(input bool) *object.Boolean {
+	if input {
+		return True
+	}
+	return False
+}
+
+// executeBinaryOperation executes all the infix operations by delegating them to the appropriate subroutines.
+// If an error is produced (either by the called subroutine or by the fact that executeBinaryOperation does not know
+// how to delegate work correctly) it's returned to the caller!
+func (vm *VM) executeBinaryOperation(op code.Opcode) error {
+	right, left := vm.pop(), vm.pop()
+	leftType, rightType := left.Type(), right.Type()
+
+	if leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ {
+		return vm.executeBinaryIntegerOperation(op, left, right)
+	}
+	return errors.New("unsupported types for binary operation: left=" + string(leftType) + " right=" + string(rightType))
+}
+
+// executeBinaryIntegerOperation knows how to perform arithmetic between integers.
+// If an error is encountered (like one of the operands, left or right not being a *object.Integer or the VM encountering
+// a stack overflow) this error is returned to the caller.
+// Otherwise, the resulting value is pushed onto the VM stack.
+func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.Object) error {
+	leftType, ok := left.(*object.Integer)
+	if !ok {
+		return errors.New(string("invalid operand type on the left side: " + leftType.Type()))
+	}
+	rightType, ok := right.(*object.Integer)
+	if !ok {
+		return errors.New(string("invalid operand type on the right side: " + rightType.Type()))
+	}
+	leftValue, rightValue := leftType.Value, rightType.Value
+	var result int64
+	switch op {
+	case code.OpAdd:
+		result = leftValue + rightValue
+	case code.OpSub:
+		result = leftValue - rightValue
+	case code.OpMul:
+		result = leftValue * rightValue
+	case code.OpDiv:
+		result = leftValue / rightValue
+	default:
+		return fmt.Errorf("unknown integer operator: %d", op)
+	}
+	return vm.push(&object.Integer{Value: result})
 }
 
 // push taken an object.Object and tries to push it onto the VM stack.

@@ -106,7 +106,7 @@ func Start(in io.Reader, out io.Writer) {
 				}
 				continue
 			}
-			stackTop := machine.StackTop()
+			stackTop := machine.LastPoppedStackElem()
 			_, err = io.WriteString(out, stackTop.Inspect())
 			if err != nil {
 				log.Printf("failed to write to output: %v", err)

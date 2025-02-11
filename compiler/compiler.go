@@ -36,7 +36,30 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
+		// This causes the compiler to emit code.OpPop bytecode instruction after every expressionStatement which in turn
+		// causes the VM to pop it of the stack.
+		// If this would not be here, the VM would be in very high risk of a stack overflow since expressions which have already
+		// expired their lifetime would not be popped of the stack...potentially causing it to fill up very quickly
+		_ = c.emit(code.OpPop)
 	case *ast.InfixExpression:
+		// We don't have a < in the bytecode in order to keep it "small" (and more so to showcase whats possible with
+		// which was not possible with in-place evaluation)
+		// To fix the ""missing"" less than operator we'll do the following
+		if node.Operator == "<" {
+			err := c.Compile(node.Right) // Compile the right node first instead of left one
+			if err != nil {
+				return err
+			}
+			err = c.Compile(node.Left) // Now compile the left node afterward
+			if err != nil {
+				return err
+			}
+			// We effectively reordered the bytecode and with that implemented the < less than operator, since
+			// 1 < 2 is equal to 2 > 1 if you just reorder the boolean expression
+			// We couldn't do that with our in-place eval
+			c.emit(code.OpGreaterThan)
+			return nil
+		}
 		err := c.Compile(node.Left)
 		if err != nil {
 			return err
@@ -48,6 +71,18 @@ func (c *Compiler) Compile(node ast.Node) error {
 		switch node.Operator {
 		case "+":
 			c.emit(code.OpAdd)
+		case "-":
+			c.emit(code.OpSub)
+		case "*":
+			c.emit(code.OpMul)
+		case "/":
+			c.emit(code.OpDiv)
+		case ">":
+			c.emit(code.OpGreaterThan)
+		case "==":
+			c.emit(code.OpEqual)
+		case "!=":
+			c.emit(code.OpNotEqual)
 		default:
 			return errors.New("Unsupported operator: " + node.Operator)
 		}
@@ -57,6 +92,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 	case *ast.IntegerLiteral:
 		integer := &object.Integer{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(integer))
+	case *ast.Boolean:
+		if node.Value {
+			c.emit(code.OpTrue)
+		} else {
+			c.emit(code.OpFalse)
+		}
 	}
 	return nil
 }
