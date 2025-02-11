@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"github.com/blazskufc/interpreter_in_go/ast"
 	"github.com/blazskufc/interpreter_in_go/code"
 	"github.com/blazskufc/interpreter_in_go/object"
@@ -43,6 +44,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 		err = c.Compile(node.Right)
 		if err != nil {
 			return err
+		}
+		switch node.Operator {
+		case "+":
+			c.emit(code.OpAdd)
+		default:
+			return errors.New("Unsupported operator: " + node.Operator)
 		}
 	// Because literals are constant, we can evaluate them right here.
 	// And by "evaluate", to omit the fancy words, we just mean create a *object.Integer from our object system

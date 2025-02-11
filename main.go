@@ -10,6 +10,7 @@ import (
 
 // main start a repl with repl.Start and sets os.Stdin as the "in" and os.Stdout as the "out" arguments
 func main() {
+
 	currUser, err := user.Current()
 	if err != nil {
 		log.Fatal(err)

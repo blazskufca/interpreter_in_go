@@ -65,6 +65,18 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpAdd:
+			leftValue, ok := vm.pop().(*object.Integer)
+			if !ok {
+				return errors.New(string("invalid operand type on the left side: " + leftValue.Type()))
+			}
+			rightValue, ok := vm.pop().(*object.Integer)
+			if !ok {
+				return errors.New(string("invalid operand type on the right side: " + rightValue.Type()))
+			}
+			if err := vm.push(&object.Integer{Value: leftValue.Value + rightValue.Value}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -82,4 +94,16 @@ func (vm *VM) push(o object.Object) error {
 	vm.stack[vm.sp] = o
 	vm.sp++
 	return nil
+}
+
+// pop pops an object from VM stack and decrements the stack pointer, sp.
+// Popped object is returned to the caller.
+// If VM's stack is empty, a nil is returned to the caller instead!
+func (vm *VM) pop() object.Object {
+	if vm.sp == 0 {
+		return nil
+	}
+	topObject := vm.stack[vm.sp-1]
+	vm.sp--
+	return topObject
 }
