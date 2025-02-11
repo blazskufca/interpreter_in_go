@@ -43,6 +43,8 @@ Three, the result of 1 + 2, replaces both operands on the stack and is now on to
 const (
 	// OpConstant is a ""pointer"" into the compilers constants pool
 	OpConstant Opcode = iota
+	// OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
+	OpAdd
 )
 
 type Instructions []byte
@@ -71,6 +73,8 @@ func (ins Instructions) fmtInstruction(def *Definition, operands []int) string {
 			len(operands), operandCount)
 	}
 	switch operandCount {
+	case 0:
+		return def.Name
 	case 1:
 		return fmt.Sprintf("%s %d", def.Name, operands[0])
 	}
@@ -86,9 +90,15 @@ type Definition struct {
 	OperandWidths []int  // OperandWidths tells us the expected length of the operands
 }
 
-// definitions is a map of all known opcodes
+// definitions is a map of all known opcodes.
+/*
+OpConstant: An index into bytecode's/compiler.Compiler's constant pool. It has a single 2 byte operand, which is the index.
+
+OpAdd: Is the OPCODE for additions on the vm.VM's stack. It has no operands.
+*/
 var definitions = map[Opcode]*Definition{
 	OpConstant: {"OpConstant", []int{2}},
+	OpAdd:      {"OpAdd", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.
