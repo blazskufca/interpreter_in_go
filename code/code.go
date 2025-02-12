@@ -98,26 +98,58 @@ And you move the instruction pointer with a "jmp" instruction, and it's conditio
 													+------------------+        |
 															|                   |
 														   ...<-----------------+
+But how to implement these arrows?
 
+Well why not just use numbers? The jump instruction could take an number, called OFFSET, which can be either absolute or relative.
+
+This offset tells the VM where to go when encountering a jump instruction, either in absolute terms, i.e. the number of the next
+instruction, or in relative terms, i.e. over how many instructions to jump over.
+
+													+-------------------------+ <---+
+											0000    |       OpConstant 0      |		|
+													+-------------------------+		|
+											0001    |       OpConstant 1      |		| +-----> Condition
+													+-------------------------+		|
+											0002    |       OpGreaterThan     |		|
+													+-------------------------+	<---+
+											0003    |  JUMP_IF_NOT_TRUE 0008  |
+													+-------------------------+ <---+
+											0004    |       OpConstant 2      |		|
+													+-------------------------+		|
+											0005    |       OpConstant 3      |		| +-----> Consequence
+													+-------------------------+		|
+											0006    |           OpAdd         |		|
+													+-------------------------+ <---+
+											0007    | JUMP_NO_MATTER_WHAT 0011|
+													+-------------------------+ <---+
+											0008    |       OpConstant 4      |		|
+													+-------------------------+		|
+											0009    |       OpConstant 5      |		| +-----> Alternative
+													+-------------------------+		|
+											0010    |          OpMinus        |		|
+													+-------------------------+	<---+
+And that's exactly what we should do!
 */
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
 
 const (
-	OpConstant    Opcode = iota // OpConstant is a ""pointer"" into the compilers constants pool
-	OpAdd                       // OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
-	OpPop                       // OpPop instructs the Monkey virtual machine to pop the topmost object of its stack.
-	OpSub                       // OpSub is a byte code instruction for arithmetic - operations
-	OpMul                       // OpMul is the bytecode instruction for arithmetic * operations
-	OpDiv                       // OpDiv is the bytecode instruction for arithmetic / operations
-	OpTrue                      // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
-	OpFalse                     // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
-	OpEqual                     // OpEqual represents the == in bytecode
-	OpNotEqual                  // OpNotEqual represents the != in bytecode
-	OpGreaterThan               // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
-	OpMinus                     // OpMinus causes the Monkey virtual machine to negate integers. It represents -
-	OpBang                      // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
+	OpConstant      Opcode = iota // OpConstant is a ""pointer"" into the compilers constants pool
+	OpAdd                         // OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
+	OpPop                         // OpPop instructs the Monkey virtual machine to pop the topmost object of its stack.
+	OpSub                         // OpSub is a byte code instruction for arithmetic - operations
+	OpMul                         // OpMul is the bytecode instruction for arithmetic * operations
+	OpDiv                         // OpDiv is the bytecode instruction for arithmetic / operations
+	OpTrue                        // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpFalse                       // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpEqual                       // OpEqual represents the == in bytecode
+	OpNotEqual                    // OpNotEqual represents the != in bytecode
+	OpGreaterThan                 // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
+	OpMinus                       // OpMinus causes the Monkey virtual machine to negate integers. It represents -
+	OpBang                        // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
+	OpJumpNotTruthy               // OpJumpNotTruthy is the bytecode representation of conditional jump instruction
+	OpJump                        // OpJump is the bytecode representation of a non-conditional jump instruction
 )
 
 type Instructions []byte
@@ -194,21 +226,32 @@ OpGreaterThan: Compares the two boolean/truthy objects if left is more than righ
 OpMinus: Causes the Monkey vm.VM to negate integers. It has no operands.
 
 OpBang: Causes the Monkey vm.VM to negate booleans. It has no operands.
+
+JUMP INSTRUCTIONS:
+
+OpJumpNotTruthy: Instructs the monkey vm.VM to preform a jump (increment the instruction pointer) if some condition
+(two topmost stack elements) is not true (or truthy). It takes one 2 byte operand, which is the address (a number) to
+which the address of where the instruction pointer should be moved to.
+
+OpJump: Instructs the monkey vm.VM to preform a jump (increment the instruction pointer). It takes one 2 byte operand,
+which is the address (a number) to which the address of where the instruction pointer should be moved to.
 */
 var definitions = map[Opcode]*Definition{
-	OpConstant:    {"OpConstant", []int{2}},
-	OpAdd:         {"OpAdd", []int{}},
-	OpPop:         {"OpPop", []int{}},
-	OpSub:         {"OpSub", []int{}},
-	OpMul:         {"OpMul", []int{}},
-	OpDiv:         {"OpDiv", []int{}},
-	OpTrue:        {"OpTrue", []int{}},
-	OpFalse:       {"OpFalse", []int{}},
-	OpEqual:       {"OpEqual", []int{}},
-	OpNotEqual:    {"OpNotEqual", []int{}},
-	OpGreaterThan: {"OpGreaterThan", []int{}},
-	OpMinus:       {"OpMinus", []int{}},
-	OpBang:        {"OpBang", []int{}},
+	OpConstant:      {"OpConstant", []int{2}},
+	OpAdd:           {"OpAdd", []int{}},
+	OpPop:           {"OpPop", []int{}},
+	OpSub:           {"OpSub", []int{}},
+	OpMul:           {"OpMul", []int{}},
+	OpDiv:           {"OpDiv", []int{}},
+	OpTrue:          {"OpTrue", []int{}},
+	OpFalse:         {"OpFalse", []int{}},
+	OpEqual:         {"OpEqual", []int{}},
+	OpNotEqual:      {"OpNotEqual", []int{}},
+	OpGreaterThan:   {"OpGreaterThan", []int{}},
+	OpMinus:         {"OpMinus", []int{}},
+	OpBang:          {"OpBang", []int{}},
+	OpJumpNotTruthy: {"OpJumpNotTruthy", []int{2}},
+	OpJump:          {"OpJump", []int{2}},
 }
 
 // Lookup looks up the byte in the definitions map.
