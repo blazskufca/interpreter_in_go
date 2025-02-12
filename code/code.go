@@ -36,6 +36,70 @@ Three, the result of 1 + 2, replaces both operands on the stack and is now on to
 														+----------+    +----------+
 														   BEFORE           AFTER
 */
+/*
+															COMPILING CONDITIONALS (if statements, etc..):
+
+In our evaluator/in-place evaluator evaluating 'if/else' statements was pretty simple one we've understood what we had to do, and that was:
+	1. Evaluate the condition (i.e. if (<condition>)
+
+	2. If the condition is truthy, evaluate the consequence (i.e. if (<truthy>) { <consequence> })
+
+	3. If the condition did not evaluate to truthy value, evaluate the 'alternative' (i.e. if (<false>) { <skip consequence> } else { <alternative, if present> })
+
+	4. If there was no alternative branch and the condition evaluated to false, return null instead of evaluating alternative
+
+This was only possible because we had our AST at hand (both node, or rather all three - condition node, consequence node and optional alternative node)
+In bytecode however, we don't have them at hand, because we flatten the AST...We just have a linear sequence of bytes - The instructions.
+
+So how do we evaluate conditionals then?
+Just doing it in linear fashion would result in 100% wrong result since all the branches would be evaluated in every case...
+
+The answer is in the same way a real machine does it...By moving around the instruction pointer!
+And you move the instruction pointer with a "jmp" instruction, and it's conditional variants
+(in x86_64 assembly for example, there is 'je' - Jump if condition is equal, etc...):
+
+													+------------------+
+													|   OpConstant 0   |
+													+------------------+
+													|   OpConstant 1   |
+													+------------------+
+													|  OpGreaterThan   |
+													+------------------+
+															|
+											+-------+ JUMP_IF_NOT_TRUE
+											|				|
+											|				v
+											|		+------------------+
+											|		|   OpConstant 2   |
+											|		+------------------+
+											|		|   OpConstant 3   |
+											|		+------------------+
+											|		|      OpAdd       |
+											|		+------------------+
+											|				|
+											|		  JUMP_NO_MATTER_WHAT +-----+
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				|                   |
+											|				v                   |
+											|		+------------------+        |
+											+-----> |   OpConstant 4   |        |
+													+------------------+        |
+													|   OpConstant 5   |        |
+													+------------------+        |
+													|     OpMinus      |        |
+													+------------------+        |
+															|                   |
+														   ...<-----------------+
+
+*/
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
