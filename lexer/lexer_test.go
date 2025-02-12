@@ -1,7 +1,7 @@
 package lexer
 
 import (
-	"github.com/blazskufc/interpreter_in_go/token"
+	"github.com/blazskufca/interpreter_in_go/token"
 	"testing"
 )
 

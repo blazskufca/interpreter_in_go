@@ -2,7 +2,7 @@ package evaluator
 
 import (
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/object"
 	"time"
 	"unsafe"
 )

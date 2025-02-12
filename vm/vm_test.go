@@ -2,11 +2,11 @@ package vm
 
 import (
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/compiler"
-	"github.com/blazskufc/interpreter_in_go/lexer"
-	"github.com/blazskufc/interpreter_in_go/object"
-	"github.com/blazskufc/interpreter_in_go/parser"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/compiler"
+	"github.com/blazskufca/interpreter_in_go/lexer"
+	"github.com/blazskufca/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/parser"
 	"testing"
 )
 
@@ -29,6 +29,10 @@ func TestIntegerArithmetic(t *testing.T) {
 		{"5 * 2 + 10", 20},
 		{"5 + 2 * 10", 25},
 		{"5 * (2 + 10)", 60},
+		{"-5", -5},
+		{"-10", -10},
+		{"-50 + 100 + -50", 0},
+		{"(5 + 10 * 2 + 15 / 3) * 2 + -10", 50},
 	}
 	runVmTests(t, tests)
 }
@@ -54,6 +58,12 @@ func TestBooleanExpressions(t *testing.T) {
 		{"(1 < 2) == false", false},
 		{"(1 > 2) == true", false},
 		{"(1 > 2) == false", true},
+		{"!true", false},
+		{"!false", true},
+		{"!5", false},
+		{"!!true", true},
+		{"!!false", false},
+		{"!!5", true},
 	}
 	runVmTests(t, tests)
 }

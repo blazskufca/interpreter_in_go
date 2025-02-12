@@ -1,10 +1,10 @@
 package evaluator
 
 import (
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/lexer"
-	"github.com/blazskufc/interpreter_in_go/object"
-	"github.com/blazskufc/interpreter_in_go/parser"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/lexer"
+	"github.com/blazskufca/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/parser"
 	"testing"
 )
 

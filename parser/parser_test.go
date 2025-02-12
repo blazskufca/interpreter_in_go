@@ -2,8 +2,8 @@ package parser
 
 import (
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/lexer"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/lexer"
 	"testing"
 )
 

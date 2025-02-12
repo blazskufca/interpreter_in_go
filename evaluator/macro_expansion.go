@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/object"
 )
 
 // DefineMacros does two things.

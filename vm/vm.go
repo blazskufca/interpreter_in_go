@@ -3,9 +3,9 @@ package vm
 import (
 	"errors"
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/code"
-	"github.com/blazskufc/interpreter_in_go/compiler"
-	"github.com/blazskufc/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/code"
+	"github.com/blazskufca/interpreter_in_go/compiler"
+	"github.com/blazskufca/interpreter_in_go/object"
 )
 
 const StackSize = 2048
@@ -104,9 +104,50 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpBang:
+			err := vm.executeBangOperator()
+			if err != nil {
+				return err
+			}
+		case code.OpMinus:
+			err := vm.executeMinusOperator()
+			if err != nil {
+				return err
+			}
 		}
+
 	}
 	return nil
+}
+
+// executeMinusOperator handle the - prefix operator on integer operands.
+// An error might be returned if the operand is not of type *object.Integer or if the VM stack overflows.
+func (vm *VM) executeMinusOperator() error {
+	operand := vm.pop()
+	operandInteger, ok := operand.(*object.Integer)
+	if !ok {
+		return errors.New("operand is not an integer: " + string(operand.Type()))
+	}
+	if operandInteger.Type() != object.INTEGER_OBJ {
+		return errors.New("operand is not an integer: " + string(operand.Type()))
+	}
+	integerValue := operandInteger.Value
+	return vm.push(&object.Integer{Value: -integerValue})
+}
+
+// executeBangOperator handles the ! prefix operator on boolean values according to predefined logic.
+// An error might be returned indicating a stack overflow in Monkey VM.
+func (vm *VM) executeBangOperator() error {
+	operand := vm.pop()
+
+	switch operand {
+	case True:
+		return vm.push(False)
+	case False:
+		return vm.push(True)
+	default:
+		return vm.push(False)
+	}
 }
 
 // executeComparison tries to evaluate boolean expressions (true != false, etc...) on the last two stack objects.

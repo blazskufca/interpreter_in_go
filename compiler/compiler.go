@@ -2,9 +2,9 @@ package compiler
 
 import (
 	"errors"
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/code"
-	"github.com/blazskufc/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/code"
+	"github.com/blazskufca/interpreter_in_go/object"
 )
 
 // Compiler has two internal fields which are modified by the Compiler.Compile method.
@@ -97,6 +97,19 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpTrue)
 		} else {
 			c.emit(code.OpFalse)
+		}
+	case *ast.PrefixExpression:
+		err := c.Compile(node.Right)
+		if err != nil {
+			return err
+		}
+		switch node.Operator {
+		case "!": // The Bang prefix operator is defined for boolean arithmetic/operands
+			c.emit(code.OpBang)
+		case "-": // The Minus prefix operator is defined for integer arithmetic/operands
+			c.emit(code.OpMinus)
+		default:
+			return errors.New("unsupported operator: " + node.Operator)
 		}
 	}
 	return nil

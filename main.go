@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/repl"
+	"github.com/blazskufca/interpreter_in_go/repl"
 	"log"
 	"os"
 	"os/user"

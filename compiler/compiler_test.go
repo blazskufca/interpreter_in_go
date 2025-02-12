@@ -2,11 +2,11 @@ package compiler
 
 import (
 	"fmt"
-	"github.com/blazskufc/interpreter_in_go/ast"
-	"github.com/blazskufc/interpreter_in_go/code"
-	"github.com/blazskufc/interpreter_in_go/lexer"
-	"github.com/blazskufc/interpreter_in_go/object"
-	"github.com/blazskufc/interpreter_in_go/parser"
+	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/code"
+	"github.com/blazskufca/interpreter_in_go/lexer"
+	"github.com/blazskufca/interpreter_in_go/object"
+	"github.com/blazskufca/interpreter_in_go/parser"
 	"testing"
 )
 
@@ -66,6 +66,15 @@ func TestIntegerArithmetic(t *testing.T) {
 				code.Make(code.OpConstant, 0),
 				code.Make(code.OpPop),
 				code.Make(code.OpConstant, 1),
+				code.Make(code.OpPop),
+			},
+		},
+		{
+			input:             "-1",
+			expectedConstants: []any{1},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpConstant, 0),
+				code.Make(code.OpMinus),
 				code.Make(code.OpPop),
 			},
 		},
@@ -148,6 +157,15 @@ func TestBooleanExpressions(t *testing.T) {
 				code.Make(code.OpTrue),
 				code.Make(code.OpFalse),
 				code.Make(code.OpNotEqual),
+				code.Make(code.OpPop),
+			},
+		},
+		{
+			input:             "!true",
+			expectedConstants: []any{},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpTrue),
+				code.Make(code.OpBang),
 				code.Make(code.OpPop),
 			},
 		},

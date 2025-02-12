@@ -52,6 +52,8 @@ const (
 	OpEqual                     // OpEqual represents the == in bytecode
 	OpNotEqual                  // OpNotEqual represents the != in bytecode
 	OpGreaterThan               // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
+	OpMinus                     // OpMinus causes the Monkey virtual machine to negate integers. It represents -
+	OpBang                      // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
 )
 
 type Instructions []byte
@@ -124,6 +126,10 @@ OpEqual: Compares the two boolean/truthy objects if they are equal. It has no op
 OpNotEqual: Compares the two boolean/truthy objects if they are not equal. It has no operands.
 
 OpGreaterThan: Compares the two boolean/truthy objects if left is more than right. It has no operands.
+
+OpMinus: Causes the Monkey vm.VM to negate integers. It has no operands.
+
+OpBang: Causes the Monkey vm.VM to negate booleans. It has no operands.
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:    {"OpConstant", []int{2}},
@@ -137,6 +143,8 @@ var definitions = map[Opcode]*Definition{
 	OpEqual:       {"OpEqual", []int{}},
 	OpNotEqual:    {"OpNotEqual", []int{}},
 	OpGreaterThan: {"OpGreaterThan", []int{}},
+	OpMinus:       {"OpMinus", []int{}},
+	OpBang:        {"OpBang", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.

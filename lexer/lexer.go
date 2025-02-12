@@ -1,6 +1,6 @@
 package lexer
 
-import "github.com/blazskufc/interpreter_in_go/token"
+import "github.com/blazskufca/interpreter_in_go/token"
 
 // TODO: Potential improvement: Support full unicode input streams instead of ASCII
 // it’s worth pointing out that the Lexer only supports ASCII characters instead of the full Unicode range.
