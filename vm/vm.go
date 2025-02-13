@@ -16,6 +16,9 @@ var True = &object.Boolean{Value: true}
 // False is a global *object.Boolean with a value of false which the Monkey VM reuses anytime it needs a false boolean.
 var False = &object.Boolean{Value: false}
 
+// Null represents a value or lack there of a value. It's used when expressions in Monkey evaluate to "nothing"
+var Null = &object.Null{}
+
 // VM represent a Monkey Virtual Machine - The heart of the bytecode interpreter, which executes/evaluates bytecode
 // produced by compiler.Compiler.
 // Monkey virtual machine is a stack based virtual machine.
@@ -114,10 +117,39 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpJump:
+			pos := int(code.ReadUint16(vm.instructions[instructionPointer+1:]))
+			// Since we are looping through the array and incrementing Instruction Pointer each time, we have to set it
+			// just before the instruction we want here
+			instructionPointer = pos - 1
+		case code.OpJumpNotTruthy:
+			pos := int(code.ReadUint16(vm.instructions[instructionPointer+1:]))
+			instructionPointer += 2 // Skip over the address encoded in OpJumpNotTruthy
+			condition := vm.pop()
+			if !isTruthy(condition) {
+				instructionPointer = pos - 1
+			}
+		case code.OpNull:
+			err := vm.push(Null)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
+}
+
+// isTruthy evaluates truthy monkey expressions and returns a Go native bool
+func isTruthy(obj object.Object) bool {
+	switch obj := obj.(type) {
+	case *object.Boolean:
+		return obj.Value
+	case *object.Null:
+		return false
+	default:
+		return true
+	}
 }
 
 // executeMinusOperator handle the - prefix operator on integer operands.
@@ -144,6 +176,8 @@ func (vm *VM) executeBangOperator() error {
 	case True:
 		return vm.push(False)
 	case False:
+		return vm.push(True)
+	case Null:
 		return vm.push(True)
 	default:
 		return vm.push(False)

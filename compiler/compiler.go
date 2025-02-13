@@ -146,14 +146,16 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.removeLastPop()
 		}
 
+		// Emit an `OpJump` with a bogus value
+		jumpPos := c.emit(code.OpJump, 9999)
+
 		// Now we know how big the consequence block is meaning we can fix up the garbage we generated above...
+		afterConsequencePos := len(c.instructions)      // The address after the consequence
+		c.changeOperand(jneInsPos, afterConsequencePos) // The OpJumpNotTruthy should NOT jump to 9999 anymore, it should jump to afterConsequencePos!
+
 		if node.Alternative == nil {
-			afterConsequencePos := len(c.instructions)      // The address after the consequence
-			c.changeOperand(jneInsPos, afterConsequencePos) // The OpJumpNotTruthy should NOT jump to 9999 anymore, it should jump to afterConsequencePos!
+			c.emit(code.OpNull) // If there is no alternative in this if statement we need to generate a *object.Null.
 		} else {
-			jumpPos := c.emit(code.OpJump, 9999) // Emit an `OpJump` with a bogus value
-			afterConsequencePos := len(c.instructions)
-			c.changeOperand(jneInsPos, afterConsequencePos)
 			err := c.Compile(node.Alternative)
 			if err != nil {
 				return err
@@ -161,9 +163,10 @@ func (c *Compiler) Compile(node ast.Node) error {
 			if c.lastInstructionIsPop() {
 				c.removeLastPop()
 			}
-			afterAlternativePos := len(c.instructions)
-			c.changeOperand(jumpPos, afterAlternativePos)
 		}
+		afterAlternativePos := len(c.instructions)
+		c.changeOperand(jumpPos, afterAlternativePos)
+
 	case *ast.BlockStatement:
 		for _, statement := range node.Statements {
 			err := c.Compile(statement)

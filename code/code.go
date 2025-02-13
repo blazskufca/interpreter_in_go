@@ -150,6 +150,7 @@ const (
 	OpBang                        // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
 	OpJumpNotTruthy               // OpJumpNotTruthy is the bytecode representation of conditional jump instruction
 	OpJump                        // OpJump is the bytecode representation of a non-conditional jump instruction
+	OpNull                        // OpNull instruction represents a lack of value in Monkey or rather a *object.Null in Monkey object system
 )
 
 type Instructions []byte
@@ -200,6 +201,8 @@ type Definition struct {
 OpConstant: An index into bytecode's/compiler.Compiler's constant pool. It has a single 2 byte operand, which is the index.
 
 OpPop: Instruct the Monkey vm.VM to pop the topmost element of the stack. It has no operands.
+
+OpNull: Instructs a Monkey vm.VM to put a *object.Null onto its stack. It has no operands.
 
 ARITHMETIC OPERATIONS:
 
@@ -252,6 +255,7 @@ var definitions = map[Opcode]*Definition{
 	OpBang:          {"OpBang", []int{}},
 	OpJumpNotTruthy: {"OpJumpNotTruthy", []int{2}},
 	OpJump:          {"OpJump", []int{2}},
+	OpNull:          {"OpNull", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.
