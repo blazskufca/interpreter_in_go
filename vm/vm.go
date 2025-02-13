@@ -158,10 +158,32 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpArray: // Doing what's described in code/code.go
+			numElements := int(code.ReadUint16(vm.instructions[instructionPointer+1:])) // Decode the instruction
+			instructionPointer += 2                                                     // skip over the operands
+
+			array := vm.buildArray(vm.sp-numElements, vm.sp) // Build array need a start and end address/index
+			vm.sp = vm.sp - numElements                      // Clear the values which we don't need anymore after we've build the array!
+
+			err := vm.push(array) // push the build array onto the stack and that's that!
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
+}
+
+// buildArray accepts start index (an address on the stack) and end index (an address on the stack) for the array.
+// It then walks all the locations between start and end indexes, collecting the values from the stack and adding them
+// to the array which is then returned
+func (vm *VM) buildArray(startIndex int, endIndex int) object.Object {
+	elements := make([]object.Object, endIndex-startIndex)
+	for i := startIndex; i < endIndex; i++ {
+		elements[i-startIndex] = vm.stack[i]
+	}
+	return &object.Array{Elements: elements}
 }
 
 // isTruthy evaluates truthy monkey expressions and returns a Go native bool
@@ -267,10 +289,34 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	right, left := vm.pop(), vm.pop()
 	leftType, rightType := left.Type(), right.Type()
 
-	if leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ {
+	switch {
+	case leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ:
 		return vm.executeBinaryIntegerOperation(op, left, right)
+	case leftType == object.STRING_OBJ && rightType == object.STRING_OBJ:
+		return vm.executeBinaryStringOperation(op, left, right)
+	default:
+		return errors.New("unsupported types for binary operation: left=" + string(leftType) + " right=" + string(rightType))
 	}
-	return errors.New("unsupported types for binary operation: left=" + string(leftType) + " right=" + string(rightType))
+}
+
+// executeBinaryStringOperation performs operations on string literals.
+// An error can be returned if either object is not a *object.STRING_OBJ, the OPCODE is unknown or unsupported,
+// or the VM stack overflows!
+// Otherwise the result of the operation is pushed onto the VM stack.
+func (vm *VM) executeBinaryStringOperation(op code.Opcode, left, right object.Object) error {
+	if op != code.OpAdd {
+		return errors.New("unknown string operator " + string(op))
+	}
+	leftType, ok := left.(*object.String)
+	if !ok {
+		return errors.New("left object is not a string: " + string(left.Type()))
+	}
+	rightType, ok := right.(*object.String)
+	if !ok {
+		return errors.New("right object is not a string: " + string(right.Type()))
+	}
+	leftValue, rightValue := leftType.Value, rightType.Value
+	return vm.push(&object.String{Value: leftValue + rightValue})
 }
 
 // executeBinaryIntegerOperation knows how to perform arithmetic between integers.

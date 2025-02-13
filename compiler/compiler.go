@@ -202,6 +202,19 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 		// If we have the symbol we can emit a OpGetGlobal to cause the VM to stack load it
 		c.emit(code.OpGetGlobal, symbol.Index)
+	case *ast.StringLiteral:
+		str := &object.String{Value: node.Value}
+		c.emit(code.OpConstant, c.addConstant(str))
+	case *ast.ArrayLiteral:
+		// Compile all the elements of the array like we've talked about in code/code.go
+		for _, element := range node.Elements {
+			err := c.Compile(element)
+			if err != nil {
+				return err
+			}
+		}
+
+		c.emit(code.OpArray, len(node.Elements)) // emit an code.OpArray which will case the VM to build the array dynamically!
 
 	}
 	return nil

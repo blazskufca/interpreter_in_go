@@ -174,6 +174,25 @@ instruction.
 
 OpGetGlobal will do the reverse, index into the global store, get the value at the index and load it onto the VM stack...
 */
+/*
+BUILDING ARRAYS:
+
+Arrays are not constants! They are composite data types, i.e., they are composed out of other data types! (https://en.wikipedia.org/wiki/Composite_data_type)
+
+Suppose we have the following monkey array (don't look too much into this being integer arithmetic, because that's not the
+point; yes, we could pre-calculate this example at compile time and then pass a ""static"" array to the VM, but what if
+these are not integers but functions? Then we can't do that!):
+
+														[1 + 2, 3 + 4, 5 + 6]
+
+We have to instead tell to VM to build an array and how to do so. - OpArray <array length>
+
+1. We'll compile all the array elements
+2. Compiling them leaves <array length> elements on the VM's stack
+3. Emit OpArray afterward
+4. When the VM executes the OpArray opcode, it collects the last <array length> elements off its stack, builds the
+*object.Array and pushes it onto the stack!
+*/
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
@@ -197,6 +216,7 @@ const (
 	OpNull                        // OpNull instruction represents a lack of value in Monkey or rather a *object.Null in Monkey object system
 	OpGetGlobal                   // OpGetGlobal will instruct the vm.VM to load the value from global store and load it onto the VM stack
 	OpSetGlobal                   // OpSetGlobal will instruct the vm.VM to pop the topmost stack value and store it into the global store at the specified index.
+	OpArray                       // OpArray encodes the instruction which instructs the vm.VM to dynamically build an array based on the operand value
 )
 
 type Instructions []byte
@@ -292,6 +312,13 @@ OpGetGlobal: Instructs the vm.VM to get the value from the global store and load
 
 OpSetGlobal: Instructs the vm.VM to store the topmost stack value into the global store. It accepts a single 2 byte operand
 , which is the index under which the value should be stored in global store.
+
+ARRAYS:
+
+OpArray: Causes the Monkey vm.VM to collect the N elements off its stack, build an *object.Array and then push this array
+back onto its stack! It has a single 2 byte operand, which is the value of N - The length of the array or rather, how many
+previous values to collect when building the array! The maximum size of N and therefore arrays in Monkey language is
+65535.
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -312,6 +339,7 @@ var definitions = map[Opcode]*Definition{
 	OpNull:          {"OpNull", []int{}},
 	OpGetGlobal:     {"OpGetGlobal", []int{2}},
 	OpSetGlobal:     {"OpSetGlobal", []int{2}},
+	OpArray:         {"OpArray", []int{2}},
 }
 
 // Lookup looks up the byte in the definitions map.
