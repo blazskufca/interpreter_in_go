@@ -10,6 +10,10 @@ import (
 
 const StackSize = 2048
 
+// GlobalsSize is 65536, because code.OpGlobalGet and code.OpGlobalSet have a single 2 byte operand...Meaning the maximum range
+// is what the value GlobalSize is set to.
+const GlobalsSize = 65536
+
 // True is a global *object.Boolean with a value of true which the Monkey VM reuses anytime it needs a true boolean.
 var True = &object.Boolean{Value: true}
 
@@ -29,7 +33,8 @@ type VM struct {
 	// sp is the Stack Pointer (https://www.techtarget.com/whatis/definition/stack-pointer).
 	// It always points to the next value.
 	// Top of the stack is stack[ sp -1 ].
-	sp int
+	sp      int
+	globals []object.Object // globals is the evaluated global store
 }
 
 // New returns a pointer to a new, initialized, Monkey virtual machine.
@@ -41,7 +46,15 @@ func New(bytecode *compiler.Bytecode) *VM {
 		instructions: bytecode.Instructions,
 		stack:        make([]object.Object, StackSize),
 		sp:           0,
+		globals:      make([]object.Object, GlobalsSize),
 	}
+}
+
+// NewWithGlobalsStore returns a pointer to a new VM with preset Globals.
+func NewWithGlobalsStore(bytecode *compiler.Bytecode, s []object.Object) *VM {
+	vm := New(bytecode)
+	vm.globals = s
+	return vm
 }
 
 // StackTop returns an object.Object on top of the stack, object at position VM.stack[VM.sp - 1], to the caller.
@@ -131,6 +144,17 @@ func (vm *VM) Run() error {
 			}
 		case code.OpNull:
 			err := vm.push(Null)
+			if err != nil {
+				return err
+			}
+		case code.OpSetGlobal:
+			globalIndex := code.ReadUint16(vm.instructions[instructionPointer+1:])
+			instructionPointer += 2
+			vm.globals[globalIndex] = vm.pop()
+		case code.OpGetGlobal:
+			globalIndex := code.ReadUint16(vm.instructions[instructionPointer+1:])
+			instructionPointer += 2
+			err := vm.push(vm.globals[int(globalIndex)])
 			if err != nil {
 				return err
 			}

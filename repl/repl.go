@@ -32,6 +32,9 @@ const PROMPT = ">> "
 
 var MODE string
 var ENV, MACRO_ENV *object.Environment
+var CONSTANTS []object.Object
+var GLOBALS = make([]object.Object, vm.GlobalsSize)
+var SYMBOL_TABLE = compiler.NewSymbolTable()
 
 // Start creates a new bufio.Scanner which reads from "in" io.Reader, creates a new lexer.Lexer which tokenizes the read
 // input and prints out the tokens to "out" io.Writer.
@@ -88,7 +91,7 @@ func Start(in io.Reader, out io.Writer) {
 				}
 			}
 		} else if MODE == "bytecode" {
-			comp := compiler.New()
+			comp := compiler.NewWithState(SYMBOL_TABLE, CONSTANTS)
 			err := comp.Compile(program)
 			if err != nil {
 				_, err = fmt.Fprintf(out, "Woops! Compilation failed:\n %s\n", err)
@@ -97,7 +100,9 @@ func Start(in io.Reader, out io.Writer) {
 				}
 				continue
 			}
-			machine := vm.New(comp.Bytecode())
+			code := comp.Bytecode()
+			CONSTANTS = code.Constants
+			machine := vm.NewWithGlobalsStore(code, GLOBALS)
 			err = machine.Run()
 			if err != nil {
 				_, err = fmt.Fprintf(out, "Woops! Executing bytecode failed:\n %s\n", err)

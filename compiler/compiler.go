@@ -19,6 +19,7 @@ type Compiler struct {
 	constants       []object.Object    // constants is a constants pool (https://en.wikipedia.org/wiki/Literal_pool)
 	lastInstruction EmittedInstruction // lastInstruction is the very last instruction we've emitted
 	prevInstruction EmittedInstruction // previousInstruction is the instruction which came before lastInstruction
+	symbolTable     *SymbolTable       // *SymbolTable is a pointer to the SymbolTable, which holds bound information about identifiers (Symbol)
 }
 
 // New returns a new initialized Compiler
@@ -28,7 +29,16 @@ func New() *Compiler {
 		constants:       []object.Object{},
 		lastInstruction: EmittedInstruction{},
 		prevInstruction: EmittedInstruction{},
+		symbolTable:     NewSymbolTable(),
 	}
+}
+
+// NewWithState returns a pointer to a new Compiler with preset SymbolTable and constants.
+func NewWithState(s *SymbolTable, constants []object.Object) *Compiler {
+	compiler := New()
+	compiler.symbolTable = s
+	compiler.constants = constants
+	return compiler
 }
 
 // Compile recursively walks the AST, compiling every node as it goes along.
@@ -166,7 +176,6 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 		afterAlternativePos := len(c.instructions)
 		c.changeOperand(jumpPos, afterAlternativePos)
-
 	case *ast.BlockStatement:
 		for _, statement := range node.Statements {
 			err := c.Compile(statement)
@@ -174,6 +183,25 @@ func (c *Compiler) Compile(node ast.Node) error {
 				return err
 			}
 		}
+	case *ast.LetStatement:
+		err := c.Compile(node.Value)
+		if err != nil {
+			return err
+		}
+		// Define a symbol in the SymbolTable
+		// Node.Name is the *ast.Identifier, the left side of the let statement
+		// Therefore the node.Name.Value is the name of the Identifier, the string itself.
+		symbol := c.symbolTable.Define(node.Name.Value)
+		c.emit(code.OpSetGlobal, symbol.Index) // put the symbol we created above into the bytecode as described in code/code.go
+	case *ast.Identifier:
+		// For every identifier we come across check if it's a "known" symbol otherwise we return a COMPILE time error...
+		// In the evaluator we did this at runtime...Now we don't have to
+		symbol, ok := c.symbolTable.Resolve(node.Value)
+		if !ok {
+			return errors.New("Undefined symbol: " + node.Value)
+		}
+		// If we have the symbol we can emit a OpGetGlobal to cause the VM to stack load it
+		c.emit(code.OpGetGlobal, symbol.Index)
 
 	}
 	return nil

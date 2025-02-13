@@ -130,6 +130,50 @@ instruction, or in relative terms, i.e. over how many instructions to jump over.
 													+-------------------------+	<---+
 And that's exactly what we should do!
 */
+/*
+BINDING VALUES TO NAMES:
+We'll be binding values/expressions to identifiers in the following way.
+
+Suppose we have the following monkey code:
+
+														let x = 33;
+														let y = 66;
+														let z = x + y;
+
+Each name (x, y, z) will get a unique number in bytecode. For simplicity sake we'll just start from 0, and then, we'll do
+the following which should be pretty clear from the following diagram:
+
+										+---------------+      +----------------------------------+
+										| OpConstant 0  | <--- | Load the "33" onto the stack     |
+										+---------------+      +----------------------------------+
+										| OpSetGlobal 0 | <--- | Bind value on stack to 0 (x var) |
+										+---------------+      +----------------------------------+
+
+										+---------------+      +----------------------------------+
+										| OpConstant 1  | <--- | Load the "66" onto the stack     |
+										+---------------+      +----------------------------------+
+										| OpSetGlobal 1 | <--- | Bind value on stack to 1 (y var) |
+										+---------------+      +----------------------------------+
+
+										+---------------+      +------------------------------------+
+										| OpGetGlobal 1 | <--- | Push the global bound to 1 (y var) |
+										+---------------+      +------------------------------------+
+										| OpGetGlobal 0 | <--- | Push the global bound to 0 (x var) |
+										+---------------+      +------------------------------------+
+										| OpAdd         | <--- | Add them together                  |
+										+---------------+      +------------------------------------+
+										| OpSetGlobal 2 | <--- | Bind value on stack to 2 (z var)   |
+										+---------------+      +------------------------------------+
+
+This is the bytecode/compiler side of things.
+
+In the vm.VM we'll have a "global store" (a slice) and we'll use the OpGetGlobal and OpSetGlobal as indexes into it.
+
+OpSetGlobal will pop the topmost value of the VM stack and save it into the global store at the index encoded in the
+instruction.
+
+OpGetGlobal will do the reverse, index into the global store, get the value at the index and load it onto the VM stack...
+*/
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
@@ -151,6 +195,8 @@ const (
 	OpJumpNotTruthy               // OpJumpNotTruthy is the bytecode representation of conditional jump instruction
 	OpJump                        // OpJump is the bytecode representation of a non-conditional jump instruction
 	OpNull                        // OpNull instruction represents a lack of value in Monkey or rather a *object.Null in Monkey object system
+	OpGetGlobal                   // OpGetGlobal will instruct the vm.VM to load the value from global store and load it onto the VM stack
+	OpSetGlobal                   // OpSetGlobal will instruct the vm.VM to pop the topmost stack value and store it into the global store at the specified index.
 )
 
 type Instructions []byte
@@ -238,6 +284,14 @@ which the address of where the instruction pointer should be moved to.
 
 OpJump: Instructs the monkey vm.VM to preform a jump (increment the instruction pointer). It takes one 2 byte operand,
 which is the address (a number) to which the address of where the instruction pointer should be moved to.
+
+NAME BINDING:
+
+OpGetGlobal: Instructs the vm.VM to get the value from the global store and load it onto the stack. It accepts a single
+2 byte operand, which is the index of the value in the global store.
+
+OpSetGlobal: Instructs the vm.VM to store the topmost stack value into the global store. It accepts a single 2 byte operand
+, which is the index under which the value should be stored in global store.
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -256,6 +310,8 @@ var definitions = map[Opcode]*Definition{
 	OpJumpNotTruthy: {"OpJumpNotTruthy", []int{2}},
 	OpJump:          {"OpJump", []int{2}},
 	OpNull:          {"OpNull", []int{}},
+	OpGetGlobal:     {"OpGetGlobal", []int{2}},
+	OpSetGlobal:     {"OpSetGlobal", []int{2}},
 }
 
 // Lookup looks up the byte in the definitions map.
