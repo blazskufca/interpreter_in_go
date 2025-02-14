@@ -192,6 +192,35 @@ We have to instead tell to VM to build an array and how to do so. - OpArray <arr
 3. Emit OpArray afterward
 4. When the VM executes the OpArray opcode, it collects the last <array length> elements off its stack, builds the
 *object.Array and pushes it onto the stack!
+
+Similar applies to hash literals:
+
+													{1 + 1: 2 * 2, 3 + 3: 4 * 4}
+
+That’s equivalent to this hash literal:
+
+															{2: 4, 6: 16}
+
+But not only do we have N dynamic values, we also have N dynamic keys.
+*/
+/*
+INDEX OPERATOR:
+
+The index operator is:
+														<expression>[<expression>]
+
+The data structure being indexed and the index itself can be produced by any expression. On semantic level this means that
+the index operator could work with any object.Object, either as the index or the value, despite the fact that we only need them
+for arrays and hash literals.
+
+But despite the index operator being defined only on arrays and hash literals, we'll implement it in a generic way:
+	1. There need to be two values sitting on the VM stack:
+																index
+														object_to_be_indexed
+	2. VM takes both off the stack
+	3. VM performs the index
+	4. VM puts the result back onto the stack
+
 */
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
@@ -217,6 +246,8 @@ const (
 	OpGetGlobal                   // OpGetGlobal will instruct the vm.VM to load the value from global store and load it onto the VM stack
 	OpSetGlobal                   // OpSetGlobal will instruct the vm.VM to pop the topmost stack value and store it into the global store at the specified index.
 	OpArray                       // OpArray encodes the instruction which instructs the vm.VM to dynamically build an array based on the operand value
+	OpHash                        // OpHash instruct the monkey vm.VM to build a dynamic hash literal
+	OpIndex                       // OpIndex represents the index operator in bytecode
 )
 
 type Instructions []byte
@@ -319,6 +350,18 @@ OpArray: Causes the Monkey vm.VM to collect the N elements off its stack, build 
 back onto its stack! It has a single 2 byte operand, which is the value of N - The length of the array or rather, how many
 previous values to collect when building the array! The maximum size of N and therefore arrays in Monkey language is
 65535.
+
+HASH LITERALS:
+
+OpHash: Similarly to array literals, hash literals are constructed dynamically by the vm.VM from the last <number_of_elements>
+on the stack. OpHash accepts a single 2 byte operand, which is the <number_of_elements> value. Maximum length of the
+key-value pairs in a hash literal is 65535, due to this being a 16-bit operand.
+
+INDEX OPERATOR:
+
+OpIndex: Instructs the vm.VM to take the topmost object.Object off the stack and use it as the index and then take
+the object.Object coming after and use it as the structure to be indexed into. Result is pushed back onto the stack.
+OpIndex has no operands.
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -340,6 +383,8 @@ var definitions = map[Opcode]*Definition{
 	OpGetGlobal:     {"OpGetGlobal", []int{2}},
 	OpSetGlobal:     {"OpSetGlobal", []int{2}},
 	OpArray:         {"OpArray", []int{2}},
+	OpHash:          {"OpHash", []int{2}},
+	OpIndex:         {"OpIndex", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.

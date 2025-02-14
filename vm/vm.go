@@ -169,10 +169,110 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpHash:
+			numElements := int(code.ReadUint16(vm.instructions[instructionPointer+1:]))
+			instructionPointer += 2
+			hash, err := vm.buildHash(vm.sp-numElements, vm.sp)
+			if err != nil {
+				return err
+			}
+			vm.sp = vm.sp - numElements
+			err = vm.push(hash)
+			if err != nil {
+				return err
+			}
+		case code.OpIndex:
+			// The order here has to match the order in the compiler
+			// i.e. index is on top of the stack and the structure just below it
+			index := vm.pop()
+			left := vm.pop()
+			err := vm.executeIndexExpression(left, index)
+			if err != nil {
+				return err
+			}
 		}
-
 	}
 	return nil
+}
+
+// executeIndexExpression handles ast.IndexExpression by delegating work to appropriate subroutine based on type of the
+// objects.
+// An error may be returned if it does not know how to index into the given objects or if any error bubbles up from the
+// works it delegated to.
+func (vm *VM) executeIndexExpression(left, index object.Object) error {
+	switch {
+	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+		return vm.executeArrayIndex(left, index)
+	case left.Type() == object.HASH_OBJ:
+		return vm.executeHashIndex(left, index)
+	default:
+		return errors.New("index operator not supported on: " + string(left.Type()))
+	}
+}
+
+// executeArrayIndex executes index expressions on object.Array.
+// It expects the left to be a *object.Array and a right to be a *object.Integer, if either is not of this type an error
+// is returned to the caller.
+// It then calculates the max/min boundaries of the array and if the index is outside of them, Null is pushed onto the VM stack.
+// An error may also be returned to the caller if the VM stack is overflowing.
+// Otherwise, a value at the index is pushed onto the stack.
+func (vm *VM) executeArrayIndex(left, index object.Object) error {
+	arrayType, ok := left.(*object.Array)
+	if !ok {
+		return errors.New("index operator not supported on: " + string(arrayType.Type()))
+	}
+	indexObject, ok := index.(*object.Integer)
+	if !ok {
+		return errors.New("index operator not supported on: " + string(indexObject.Type()))
+	}
+	i := indexObject.Value
+	max := int64(len(arrayType.Elements) - 1)
+	if i < 0 || i > max {
+		return vm.push(Null)
+	}
+	return vm.push(arrayType.Elements[i])
+}
+
+// executeHashIndex executes index expressions on object.Hash. It expects the hash to be of type *object.Hash and the index
+// to meet the object.Hashable interface. If either is not as expected an error is returned to the caller. If the value
+// at that hash key does not exist in the hash literal, a Null is pushed onto the VM stack.
+// An error might also be returned if the VM stack overflows.
+// Otherwise the value at the index is pushed onto the VM stack.
+func (vm *VM) executeHashIndex(hash, index object.Object) error {
+	hashType, ok := hash.(*object.Hash)
+	if !ok {
+		return errors.New("hash operator not supported on: " + string(hashType.Type()))
+	}
+	key, ok := index.(object.Hashable)
+	if !ok {
+		return errors.New("hash operator not supported on: " + string(index.Type()))
+	}
+	pair, ok := hashType.Pairs[key.HashKey()]
+	if !ok {
+		return vm.push(Null)
+	}
+	return vm.push(pair.Value)
+}
+
+// buildHash takes a start address and an end address on the stack. It then walks all these addresses building
+// up a hash literal.
+// An error might be returned if it encounters an *object.Object (key) which does not implement a object.Hashable
+// interface.
+// Otherwise, a pointer to a created *object.Hash is returned to the caller.
+func (vm *VM) buildHash(startIndex, endIndex int) (object.Object, error) {
+	hashedPairs := make(map[object.HashKey]object.HashPair)
+	for i := startIndex; i < endIndex; i += 2 {
+		key := vm.stack[i]
+		value := vm.stack[i+1]
+
+		pair := object.HashPair{Key: key, Value: value}
+		hashKey, ok := key.(object.Hashable)
+		if !ok {
+			return nil, errors.New("unusable as hash key: " + string(key.Type()))
+		}
+		hashedPairs[hashKey.HashKey()] = pair
+	}
+	return &object.Hash{Pairs: hashedPairs}, nil
 }
 
 // buildArray accepts start index (an address on the stack) and end index (an address on the stack) for the array.

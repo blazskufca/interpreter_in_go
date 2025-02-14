@@ -5,6 +5,7 @@ import (
 	"github.com/blazskufca/interpreter_in_go/ast"
 	"github.com/blazskufca/interpreter_in_go/code"
 	"github.com/blazskufca/interpreter_in_go/object"
+	"sort"
 )
 
 // EmittedInstruction tracks code.Opcode instruction and it's position in the stream
@@ -215,7 +216,38 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 
 		c.emit(code.OpArray, len(node.Elements)) // emit an code.OpArray which will case the VM to build the array dynamically!
-
+	case *ast.HashLiteral:
+		var keys []ast.Expression
+		for k := range node.Pairs {
+			keys = append(keys, k)
+		}
+		// Keys is a map[ast.Expression]ast.Expression and in go maps are not stable, i.e. iterating over them is not
+		// guaranteed to give a specific order, so we need to sort it manually...Meaning we would get back compiled bytecode in
+		// random orders...Which is not a huge deal, except for the tests, which would break because they expect specific order.
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i].String() < keys[j].String()
+		})
+		for _, k := range keys {
+			err := c.Compile(k) // Compile the key - It's important that the keys are compiled first, because the VM will need to reconstruct it
+			if err != nil {
+				return err
+			}
+			err = c.Compile(node.Pairs[k]) // Compile the Value
+			if err != nil {
+				return err
+			}
+		}
+		c.emit(code.OpHash, len(node.Pairs)*2)
+	case *ast.IndexExpression:
+		err := c.Compile(node.Left) // We first compile the structure being index into
+		if err != nil {
+			return err
+		}
+		err = c.Compile(node.Index) // Then we compile the index
+		if err != nil {
+			return err
+		}
+		c.emit(code.OpIndex) // Then we just emit a code.OpIndex
 	}
 	return nil
 }
