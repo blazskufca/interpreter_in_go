@@ -257,7 +257,6 @@ This would be a CompiledFunction object for the source code above:
 											|                  |      of stack                |
 											+------------------+------------------------------+
 */
-
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
 

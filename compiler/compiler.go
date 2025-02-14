@@ -329,6 +329,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 		c.emit(code.OpReturnValue)
+	case *ast.CallExpression: // All we need to do to compile a call expression, either bound to an identifier or literal is to compile the function and then emit an OpCall
+		err := c.Compile(node.Function)
+		if err != nil {
+			return err
+		}
+		c.emit(code.OpCall)
 	}
 	return nil
 }
