@@ -21,17 +21,70 @@ type Compiler struct {
 	lastInstruction EmittedInstruction // lastInstruction is the very last instruction we've emitted
 	prevInstruction EmittedInstruction // previousInstruction is the instruction which came before lastInstruction
 	symbolTable     *SymbolTable       // *SymbolTable is a pointer to the SymbolTable, which holds bound information about identifiers (Symbol)
+	scopes          []CompilationScope // scopes is a stack of CompilationScope
+	scopeIndex      int
 }
 
-// New returns a new initialized Compiler
+// CompilationScope is used to track emitted instructions. Track last emitted instruction (lastInstruction) and the one
+// before that (previousInstruction).
+/*
+For examples when compiling a function body:
+
+1. We enter a new scope
+2. We push a new scope into the Compiler scopes stack
+3. Now whenever the compiler emits anything it should only modify the fields of the current CompilationScope.
+4. Once we are done with a function body, we leave the scope, pop it from Compiler scopes stack and put the generated
+instructions into a new *object.CompiledFunction
+*/
+type CompilationScope struct {
+	instructions        code.Instructions  // instructions are the instructions which will encompass this scope
+	lastInstruction     EmittedInstruction // lastInstruction is the last emitted instruction
+	previousInstruction EmittedInstruction // previousInstruction is the instruction before lastInstruction
+}
+
+// enterScope creates and "enters" a new compiler scope. It does so by creating a new CompilationScope, appending it to
+// the compiler scope stack (Compiler.scopes) and incrementing the compiler scope index (Compiler.scopeIndex)
+func (c *Compiler) enterScope() {
+	scope := CompilationScope{
+		instructions:        code.Instructions{},
+		previousInstruction: EmittedInstruction{},
+		lastInstruction:     EmittedInstruction{},
+	}
+	c.scopes = append(c.scopes, scope)
+	c.scopeIndex++
+}
+
+// leaveScope "leaves" a CompilationScope by removing it from Compiler.scopes stack and decrementing the Compiler.scopeIndex.
+// It also temporarily saves all the CompilationScope.instructions of the scope which is about to be removed, so they
+// can be returned to the caller when the Compiler leaves the CompilationScope and leaveScope method returns.
+func (c *Compiler) leaveScope() code.Instructions {
+	instructions := c.currentInstructions()
+	c.scopes = c.scopes[:len(c.scopes)-1]
+	c.scopeIndex--
+	return instructions
+}
+
+// New returns a new initialized Compiler with a main scope initialized
 func New() *Compiler {
+	mainScope := CompilationScope{
+		instructions:        code.Instructions{},
+		lastInstruction:     EmittedInstruction{},
+		previousInstruction: EmittedInstruction{},
+	}
 	return &Compiler{
 		instructions:    code.Instructions{},
 		constants:       []object.Object{},
 		lastInstruction: EmittedInstruction{},
 		prevInstruction: EmittedInstruction{},
 		symbolTable:     NewSymbolTable(),
+		scopeIndex:      0,
+		scopes:          []CompilationScope{mainScope},
 	}
+}
+
+// currentInstructions returns the code.Instructions for the current scope (scopeIndex).
+func (c *Compiler) currentInstructions() code.Instructions {
+	return c.scopes[c.scopeIndex].instructions
 }
 
 // NewWithState returns a pointer to a new Compiler with preset SymbolTable and constants.
@@ -153,7 +206,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 		// We need the remove only the last code.OpPop...Suppose we have this monkey code now:
 		// if (true) {3; 2; 1;}
 		// In this case only the value "1" should remain on the VMs stack, but other values (3, 2) SHOULD be popped off!
-		if c.lastInstructionIsPop() {
+		if c.lastInstructionIs(code.OpPop) {
 			c.removeLastPop()
 		}
 
@@ -161,8 +214,8 @@ func (c *Compiler) Compile(node ast.Node) error {
 		jumpPos := c.emit(code.OpJump, 9999)
 
 		// Now we know how big the consequence block is meaning we can fix up the garbage we generated above...
-		afterConsequencePos := len(c.instructions)      // The address after the consequence
-		c.changeOperand(jneInsPos, afterConsequencePos) // The OpJumpNotTruthy should NOT jump to 9999 anymore, it should jump to afterConsequencePos!
+		afterConsequencePos := len(c.currentInstructions()) // The address after the consequence
+		c.changeOperand(jneInsPos, afterConsequencePos)     // The OpJumpNotTruthy should NOT jump to 9999 anymore, it should jump to afterConsequencePos!
 
 		if node.Alternative == nil {
 			c.emit(code.OpNull) // If there is no alternative in this if statement we need to generate a *object.Null.
@@ -171,11 +224,11 @@ func (c *Compiler) Compile(node ast.Node) error {
 			if err != nil {
 				return err
 			}
-			if c.lastInstructionIsPop() {
+			if c.lastInstructionIs(code.OpPop) {
 				c.removeLastPop()
 			}
 		}
-		afterAlternativePos := len(c.instructions)
+		afterAlternativePos := len(c.currentInstructions())
 		c.changeOperand(jumpPos, afterAlternativePos)
 	case *ast.BlockStatement:
 		for _, statement := range node.Statements {
@@ -248,37 +301,89 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 		c.emit(code.OpIndex) // Then we just emit a code.OpIndex
+	case *ast.FunctionLiteral:
+		c.enterScope() // We need to create a new scope for this function since we want the bytecode to be "contained"
+		err := c.Compile(node.Body)
+		if err != nil {
+			return err
+		}
+
+		// If the last instruction in function body is a code.OpPop instruction then we need to replace this Pop with
+		// code.OpReturnValue, since this is implied
+		if c.lastInstructionIs(code.OpPop) {
+			c.replaceLastPopWithReturn()
+		}
+		// On the other hand if there was no code.OpPop, no ast.ReturnStatement either then this means that we didn't have
+		// any statements at all in the function body or only statements which we couldn't turn into an OpReturnValue.
+		if !c.lastInstructionIs(code.OpReturnValue) {
+			c.emit(code.OpReturn)
+		}
+
+		instructions := c.leaveScope() // Now we want to leave the scope and collect the instructions which were compiled in that scope
+
+		compiledFunction := &object.CompiledFunction{Instructions: instructions} // So we can create the object we've talked about
+		c.emit(code.OpConstant, c.addConstant(compiledFunction))                 // And push the compiled function object into the constants pool...
+	case *ast.ReturnStatement:
+		err := c.Compile(node.ReturnValue)
+		if err != nil {
+			return err
+		}
+		c.emit(code.OpReturnValue)
 	}
 	return nil
 }
 
+// replaceLastPopWithReturn is used to handle implicit returns inside *object.CompiledFunction.
+// It does so by replacing the last code.OpPop with code.OpReturnValue in that scope.
+func (c *Compiler) replaceLastPopWithReturn() {
+	lastPos := c.scopes[c.scopeIndex].lastInstruction.Position
+	c.replaceInstruction(lastPos, code.Make(code.OpReturnValue))
+	c.scopes[c.scopeIndex].lastInstruction.Opcode = code.OpReturnValue
+}
+
 // replaceInstruction replaces instruction in Compiler instructions pool at position pos with a new one, as the name might suggest...
 func (c *Compiler) replaceInstruction(pos int, newInstruction []byte) {
+	ins := c.currentInstructions()
 	for i := 0; i < len(newInstruction); i++ {
-		c.instructions[pos+i] = newInstruction[i]
+		ins[pos+i] = newInstruction[i]
 	}
 }
 
 // changeOperand changes just the operand of instruction at position opPos in Compiler instructions pool with a new one
 // by calling replaceInstruction with reused OPCODE.
 func (c *Compiler) changeOperand(opPos, operand int) {
-	OPCODE := code.Opcode(c.instructions[opPos])
-	newInstruction := code.Make(OPCODE, operand)
+	op := code.Opcode(c.currentInstructions()[opPos])
+	newInstruction := code.Make(op, operand)
 	c.replaceInstruction(opPos, newInstruction)
 }
 
 // lastInstructionIsPop is a simple helper method. It checks if the Compiler lastInstruction instruction was a code.OpPop.
 // If it was, true is returned, false otherwise.
+// **DEPRECATED** use lastInstructionIs instead with opcode of code.OpPop.
 func (c *Compiler) lastInstructionIsPop() bool {
-	return c.lastInstruction.Opcode == code.OpPop
+	return c.scopes[c.scopeIndex].lastInstruction.Opcode == code.OpPop
+}
+
+// lastInstructionIs firstly checks that there are any instruction at all in the current CompilationScope. If there aren't
+// any false is returned.
+// Otherwise it checks if the given Opcode is the same as Compiler.scopes[ Compiler.scopeIndex ].lastInstruction.Opcode.
+func (c *Compiler) lastInstructionIs(op code.Opcode) bool {
+	if len(c.currentInstructions()) == 0 {
+		return false
+	}
+	return c.scopes[c.scopeIndex].lastInstruction.Opcode == op
 }
 
 // removeLastPop does some slicing on Compiler instructions pool. More specifically, it slices out the start position of
 // lastInstruction. It then also makes sure that lastInstruction is still correctly set, i.e. it sets it to prevInstruction.
 // As the name suggests, it's meant for removing the last code.OpPop, although it could remove any defined instruction technically...
 func (c *Compiler) removeLastPop() {
-	c.instructions = c.instructions[:c.lastInstruction.Position]
-	c.lastInstruction = c.prevInstruction
+	last := c.scopes[c.scopeIndex].lastInstruction
+	previous := c.scopes[c.scopeIndex].previousInstruction
+	old := c.currentInstructions()
+	newIns := old[:last.Position]
+	c.scopes[c.scopeIndex].instructions = newIns
+	c.scopes[c.scopeIndex].lastInstruction = previous
 }
 
 // addConstant adds a constant (literal expressions who's values don't change) of type object.Object to the
@@ -306,20 +411,18 @@ func (c *Compiler) emit(op code.Opcode, operands ...int) int {
 // lastInstruction is the instruction which was just emitted and prevInstruction is the instruction which came before the
 // lastInstruction.
 func (c *Compiler) setLastInstruction(op code.Opcode, pos int) {
-	previous := c.lastInstruction
-	last := EmittedInstruction{
-		Opcode:   op,
-		Position: pos,
-	}
-	c.prevInstruction = previous
-	c.lastInstruction = last
+	previous := c.scopes[c.scopeIndex].lastInstruction
+	last := EmittedInstruction{Opcode: op, Position: pos}
+	c.scopes[c.scopeIndex].previousInstruction = previous
+	c.scopes[c.scopeIndex].lastInstruction = last
 }
 
 // addInstruction takes an byte slice which represents the instruction and adds it into the Compiler's instruction slice.
 // It returns the (starting) position of where it was placed.
 func (c *Compiler) addInstruction(ins []byte) int {
-	posNewInstruction := len(c.instructions)
-	c.instructions = append(c.instructions, ins...)
+	posNewInstruction := len(c.currentInstructions())
+	updatedInstructions := append(c.currentInstructions(), ins...)
+	c.scopes[c.scopeIndex].instructions = updatedInstructions
 	return posNewInstruction
 }
 
@@ -334,7 +437,7 @@ type Bytecode struct {
 // structure and returns a pointer to this structure.
 func (c *Compiler) Bytecode() *Bytecode {
 	return &Bytecode{
-		Instructions: c.instructions,
+		Instructions: c.currentInstructions(),
 		Constants:    c.constants,
 	}
 }

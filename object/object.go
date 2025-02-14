@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/blazskufca/interpreter_in_go/ast"
+	"github.com/blazskufca/interpreter_in_go/code"
 	"hash/fnv"
 	"strings"
 )
@@ -56,18 +57,19 @@ The best way to see these decisions/ideas is to read through the source code of 
 type ObjectType string
 
 const (
-	INTEGER_OBJ      = "INTEGER"
-	BOOLEAN_OBJ      = "BOOLEAN"
-	NULL_OBJ         = "NULL"
-	RETURN_VALUE_OBJ = "RETURN_VALUE"
-	ERROR_OBJ        = "ERROR"
-	FUNCTION_OBJ     = "FUNCTION"
-	STRING_OBJ       = "STRING"
-	BUILTIN_OBJ      = "BUILTIN"
-	ARRAY_OBJ        = "ARRAY"
-	HASH_OBJ         = "HASH"
-	QUOTE_OBJ        = "QUOTE"
-	MACRO_OBJ        = "MACRO"
+	INTEGER_OBJ           = "INTEGER"
+	BOOLEAN_OBJ           = "BOOLEAN"
+	NULL_OBJ              = "NULL"
+	RETURN_VALUE_OBJ      = "RETURN_VALUE"
+	ERROR_OBJ             = "ERROR"
+	FUNCTION_OBJ          = "FUNCTION"
+	STRING_OBJ            = "STRING"
+	BUILTIN_OBJ           = "BUILTIN"
+	ARRAY_OBJ             = "ARRAY"
+	HASH_OBJ              = "HASH"
+	QUOTE_OBJ             = "QUOTE"
+	MACRO_OBJ             = "MACRO"
+	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ" // COMPILED_FUNCTION_OBJ represents a series of bytecode instructions which represent a function
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -445,4 +447,37 @@ func (m *Macro) Inspect() string {
 	out.WriteString(m.Body.String())
 	out.WriteString("\n}")
 	return out.String()
+}
+
+// CompiledFunction encapsulates all the code.Instructions which are encompassed by a specific function
+/*
+Here is a quick example, suppose we have this monkey source code:
+
+
+													fn() { return 5 + 10 }
+
+CompiledFunction would then be:
+
+										+------------------+------------------------------+
+										|   OpConstant 0   | <--- Load 5 on to the stack  |
+										+------------------+------------------------------+
+										|   OpConstant 1   | <--- Load 10 on to the stack |
+										+------------------+------------------------------+
+										|      OpAdd       | <--- Add them together       |
+										+------------------+------------------------------+
+										| OpReturnValue    | <--- Return value on top     |
+										|                  |      of stack                |
+										+------------------+------------------------------+
+*/
+type CompiledFunction struct {
+	Instructions code.Instructions // Instructions are the bytecode instructions of a function
+}
+
+// Type on CompiledFunction type fulfils the Object.Type interface method.
+// It returns a constant, COMPILED_FUNCTION_OBJ.
+func (cf *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
+
+// Inspect on CompiledFunction fulfils the Object.Inspect interface method.
+func (cf *CompiledFunction) Inspect() string {
+	return fmt.Sprintf("CompiledFunction[%p]", cf)
 }

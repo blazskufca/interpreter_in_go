@@ -222,6 +222,41 @@ But despite the index operator being defined only on arrays and hash literals, w
 	4. VM puts the result back onto the stack
 
 */
+/*
+COMPILING AND EXECUTING FUNCTIONS:
+
+In the bytecode interpreter we'll be handling function in the following way:
+
+1. We've defined a object.CompiledFunction which holds all the instruction of a function. This object will be passed to the
+VM as a constant (OpConstant instruction) and will therefore be placed into compilers constants pool.
+
+2. Function calls are instructed via a OpCall opcode. CompiledFunction has to be sitting on top of the stack in ordered for this to work.
+
+3. We'll handle returns from a function in two ways:
+	a. Implicit and explicit returns, i.e. when there is a value, are handled by OpReturnValue - This instruction instructs the
+		monkey Virtual Machine to return the value on top of the stack to the calling context and resume program execution there
+
+	b. Functions with no return values (which are hard to even create in monkey, but that's besides the point - they do
+		exists) are handled by OpReturn. This instruction also tells the VM to transfer control back to the calling context
+		but instead of returning the value on top of the function stack, return a vm.Null, because there is no return value!
+
+Here is a quick diagram showcasing an example of a CompiledFunction object. Suppose we are compiling the following monkey
+code:
+														fn() { return 5 + 10 }
+
+This would be a CompiledFunction object for the source code above:
+
+											+------------------+------------------------------+
+											|   OpConstant 0   | <--- Load 5 on to the stack  |
+											+------------------+------------------------------+
+											|   OpConstant 1   | <--- Load 10 on to the stack |
+											+------------------+------------------------------+
+											|      OpAdd       | <--- Add them together       |
+											+------------------+------------------------------+
+											| OpReturnValue    | <--- Return value on top     |
+											|                  |      of stack                |
+											+------------------+------------------------------+
+*/
 
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
@@ -248,6 +283,9 @@ const (
 	OpArray                       // OpArray encodes the instruction which instructs the vm.VM to dynamically build an array based on the operand value
 	OpHash                        // OpHash instruct the monkey vm.VM to build a dynamic hash literal
 	OpIndex                       // OpIndex represents the index operator in bytecode
+	OpCall                        // OpCall is a bytecode representation of a function call
+	OpReturnValue                 // OpReturnValue represents both explicit and implicit returns from a function in bytecode
+	OpReturn                      // OpReturn signifies a return from a Monkey function with NO return value (no implicit and no explicit return)
 )
 
 type Instructions []byte
@@ -362,6 +400,26 @@ INDEX OPERATOR:
 OpIndex: Instructs the vm.VM to take the topmost object.Object off the stack and use it as the index and then take
 the object.Object coming after and use it as the structure to be indexed into. Result is pushed back onto the stack.
 OpIndex has no operands.
+
+FUNCTIONS:
+
+OpCall: Represents a function call (causes the vm.VM to execute a call of specific function literal). It has no operands.
+
+OpReturnValue: Instructs the monkey vm.VM to return from a function with a return value (it represents both implicit and
+explicit returns). The value which will be return is sitting/has to sit on top of the VM stack. OpReturnValue has no operands.
+
+OpReturn: Instructs the Monkey vm.VM to return from a function with no return value (no explicit return value and no
+implicit return value). In Monkey lack of value is displayed by object.Null (*vm.Null package global rather).
+Note that it's hard to come up with such a function at all in Monkey, but they do exist. Here are two
+examples of such functions:
+
+												fn() { } // Example 1
+
+And:
+
+												fn() { let a = 1; } // Example 2
+
+OpReturn is meant to instruct the vm.VM on how to correctly handle such functions. OpReturn opcode has no operands.
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -385,6 +443,9 @@ var definitions = map[Opcode]*Definition{
 	OpArray:         {"OpArray", []int{2}},
 	OpHash:          {"OpHash", []int{2}},
 	OpIndex:         {"OpIndex", []int{}},
+	OpCall:          {"OpCall", []int{}},
+	OpReturnValue:   {"OpReturnValue", []int{}},
+	OpReturn:        {"OpReturn", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.
