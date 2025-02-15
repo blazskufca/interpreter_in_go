@@ -490,8 +490,9 @@ NumLocals is used so that the VM can reserve appropriate amount of stack space:
 															+----------------+ -----+
 */
 type CompiledFunction struct {
-	Instructions code.Instructions // Instructions are the bytecode instructions of a function
-	NumLocals    int               // NumLocals will be passed to the vm.VM so it can reserve the stack space for them.
+	Instructions  code.Instructions // Instructions are the bytecode instructions of a function
+	NumLocals     int               // NumLocals will be passed to the vm.VM so it can reserve the stack space for them.
+	NumParameters int               // NumParameters will be passed to the vm.VM so it can check it received correct number of arguments
 }
 
 // Type on CompiledFunction type fulfils the Object.Type interface method.

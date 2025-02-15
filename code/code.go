@@ -320,6 +320,50 @@ We'll be going with the second option and here is how it works:
 		- Since we've saved the stack pointer before we started the execution we can now just restore it.
 			- Not only will this clean up the "function workspace" but it will also remove all the locals
 */
+/*
+CALL ARGUMENTS:
+
+Calling convention without function arguments is as follows:
+	1. Push object.CompiledFunction onto the VM stack
+	2. Emit an OpCall instruction
+
+With function arguments the calling convention changes to:
+	1. Push the object.CompiledFunction you want to call
+	2. Push the arguments for the function onto the stack
+	3. Emit an OpCall instruction
+
+Here is the diagram of the stack when setting up a function call with the new calling convention:
+
+													   +----------------+
+													   |                |
+													   +----------------+
+													   |                |
+													   +----------------+
+										vm.sp ------>  |                |
+													   +----------------+
+													   |     Arg 2      |
+													   +----------------+
+													   |     Arg 1      |
+													   +----------------+
+													   |   Function     |
+													   +----------------+
+
+Or rather, more correct diagram, accounting for Frames and base pointer, is this:
+
+													   +----------------+
+													   |                |
+													   +----------------+
+													   |                |
+													   +----------------+
+										vm.sp ------>  |                | <--- basePointer + 2
+													   +----------------+
+													   |     Arg 2      | <--- basePointer + 1
+													   +----------------+
+													   |     Arg 1      | <--- basePointer
+													   +----------------+
+													   |   Function     |
+													   +----------------+
+*/
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
 
@@ -467,7 +511,9 @@ OpIndex has no operands.
 
 FUNCTIONS:
 
-OpCall: Represents a function call (causes the vm.VM to execute a call of specific function literal). It has no operands.
+OpCall: Represents a function call (causes the vm.VM to execute a call of specific function literal). It has a single
+1-byte operand, representing the number of arguments this function will receive and have been pushed onto the vm.VM
+stack for the function to use. Since the operand is a single byte, number of function arguments is limited to 256.
 
 OpReturnValue: Instructs the monkey vm.VM to return from a function with a return value (it represents both implicit and
 explicit returns). The value which will be return is sitting/has to sit on top of the VM stack. OpReturnValue has no operands.
@@ -515,7 +561,7 @@ var definitions = map[Opcode]*Definition{
 	OpArray:         {"OpArray", []int{2}},
 	OpHash:          {"OpHash", []int{2}},
 	OpIndex:         {"OpIndex", []int{}},
-	OpCall:          {"OpCall", []int{}},
+	OpCall:          {"OpCall", []int{1}},
 	OpReturnValue:   {"OpReturnValue", []int{}},
 	OpReturn:        {"OpReturn", []int{}},
 	OpGetLocal:      {"OpGetLocal", []int{1}},

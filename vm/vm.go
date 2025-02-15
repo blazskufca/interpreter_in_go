@@ -224,18 +224,13 @@ func (vm *VM) Run() error {
 				return err
 			}
 		case code.OpCall:
-			comFun, ok := vm.stack[vm.sp-1].(*object.CompiledFunction)
-			if !ok {
-				return errors.New("tried to call a non function object: " + string(comFun.Type()))
+			// Read the number of function arguments from the code.OpCall
+			numArgs := code.ReadUint8(frameInstructions[instructionPointer+1:])
+			vm.currentFrame().ip += 1
+			err := vm.callFunction(int(numArgs))
+			if err != nil {
+				return err
 			}
-			// As a result of creating a new frame with a reference to a function we've pulled off the stack
-			// and then pushing the frame onto VM frames stack, the fetch-decode-execute cycle will execute the function
-			// instructions in the next loop
-			frame := NewFrame(comFun, vm.sp) // Also save the current stack pointer which becomes the base pointer of the new frame
-			vm.pushFrame(frame)
-			// This reserves the space on the stack for locals
-			// Note that this reserved slots might contain no or OLD values/""dangling pointers"" - But we don't care about this.
-			vm.sp = frame.basePointer + comFun.NumLocals
 		case code.OpReturnValue:
 			// Inside the function frame, pop the topmost value of the stack which is the returnValue and set it aside
 			returnValue := vm.pop()
@@ -270,6 +265,65 @@ func (vm *VM) Run() error {
 			}
 		}
 	}
+	return nil
+}
+
+// callFunction take care of ""finding"" object.CompiledFunction on the VM stack, checking it really is a CompiledFunction
+// creating a new Frame for this function, pushing this frame into VM.frames stack and adjusting the VM.sp stack pointer.
+// If any error occurs during any part of this process, it's returned to the caller.
+func (vm *VM) callFunction(numArguments int) error {
+	// Since function arguments are sitting above the object.CompiledFunction we need to subtract the number of them
+	// we just extracted from the code.OpCall above.
+	comFun, ok := vm.stack[vm.sp-1-int(numArguments)].(*object.CompiledFunction)
+	if !ok {
+		return errors.New("tried to call a non function object: " + string(comFun.Type()))
+	}
+	if numArguments != comFun.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", comFun.NumParameters, numArguments)
+	}
+	// As a result of creating a new frame with a reference to a function we've pulled off the stack
+	// and then pushing the frame onto VM frames stack, the fetch-decode-execute cycle will execute the function
+	// instructions in the next loop
+	/*
+			If we just passed vm.sp as the base pointer into a new frame, this would happen with call arguments in place
+															   +----------------+
+															   |                | <--- basePointer + 2
+															   +----------------+
+															   |                | <--- basePointer + 1
+															   +----------------+
+												vm.sp ------>  |                | <--- basePointer
+															   +----------------+
+															   |     Arg 2      |
+															   +----------------+
+															   |     Arg 1      |
+															   +----------------+
+															   |   Function     |
+															   +----------------+
+
+		But what we actually want the call stack to look like is this:
+
+															   +----------------+
+															   |                |
+															   +----------------+
+															   |                |
+															   +----------------+
+												vm.sp ------>  |                | <--- basePointer + 2
+															   +----------------+
+															   |     Arg 2      | <--- basePointer + 1
+															   +----------------+
+															   |     Arg 1      | <--- basePointer
+															   +----------------+
+															   |   Function     |
+															   +----------------+
+		So the correct calculation for the base pointer in a new frame is:
+
+														basePointer = vm.sp -numArguments
+	*/
+	frame := NewFrame(comFun, vm.sp-numArguments) // Also save the current stack pointer which becomes the base pointer of the new frame
+	vm.pushFrame(frame)
+	// This reserves the space on the stack for locals
+	// Note that this reserved slots might contain no or OLD values/""dangling pointers"" - But we don't care about this.
+	vm.sp = frame.basePointer + comFun.NumLocals
 	return nil
 }
 

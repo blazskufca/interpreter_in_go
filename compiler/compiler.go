@@ -31,8 +31,11 @@ type Compiler struct {
 For examples when compiling a function body:
 
 1. We enter a new scope
+
 2. We push a new scope into the Compiler scopes stack
+
 3. Now whenever the compiler emits anything it should only modify the fields of the current CompilationScope.
+
 4. Once we are done with a function body, we leave the scope, pop it from Compiler scopes stack and put the generated
 instructions into a new *object.CompiledFunction
 */
@@ -317,6 +320,10 @@ func (c *Compiler) Compile(node ast.Node) error {
 		c.emit(code.OpIndex) // Then we just emit a code.OpIndex
 	case *ast.FunctionLiteral:
 		c.enterScope() // We need to create a new scope for this function since we want the bytecode to be "contained"
+
+		for _, p := range node.Parameters { // Define all the function parameters in this scope
+			c.symbolTable.Define(p.Value)
+		}
 		err := c.Compile(node.Body)
 		if err != nil {
 			return err
@@ -337,8 +344,8 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 		instructions := c.leaveScope() // Now we want to leave the scope and collect the instructions which were compiled in that scope
 
-		compiledFunction := &object.CompiledFunction{Instructions: instructions, NumLocals: numLocals} // So we can create the object we've talked about
-		c.emit(code.OpConstant, c.addConstant(compiledFunction))                                       // And push the compiled function object into the constants pool...
+		compiledFunction := &object.CompiledFunction{Instructions: instructions, NumLocals: numLocals, NumParameters: len(node.Parameters)} // So we can create the object we've talked about
+		c.emit(code.OpConstant, c.addConstant(compiledFunction))                                                                            // And push the compiled function object into the constants pool...
 	case *ast.ReturnStatement:
 		err := c.Compile(node.ReturnValue)
 		if err != nil {
@@ -350,7 +357,14 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
-		c.emit(code.OpCall)
+		// Compile all the call arguments - They end up on the stack above the function we want to call
+		for _, a := range node.Arguments {
+			err := c.Compile(a)
+			if err != nil {
+				return err
+			}
+		}
+		c.emit(code.OpCall, len(node.Arguments)) // When emitting also emit the number of function arguments
 	}
 	return nil
 }
