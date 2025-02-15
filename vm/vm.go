@@ -65,7 +65,7 @@ func (vm *VM) popFrame() *Frame {
 // A new, main Frame (NewFrame) is created and pushed onto the frame stack.
 func New(bytecode *compiler.Bytecode) *VM {
 	mainFn := &object.CompiledFunction{Instructions: bytecode.Instructions}
-	mainFrame := NewFrame(mainFn)
+	mainFrame := NewFrame(mainFn, 0)
 	frames := make([]*Frame, MaxFrames)
 	frames[0] = mainFrame
 	return &VM{constants: bytecode.Constants,
@@ -231,21 +231,40 @@ func (vm *VM) Run() error {
 			// As a result of creating a new frame with a reference to a function we've pulled off the stack
 			// and then pushing the frame onto VM frames stack, the fetch-decode-execute cycle will execute the function
 			// instructions in the next loop
-			frame := NewFrame(comFun)
+			frame := NewFrame(comFun, vm.sp) // Also save the current stack pointer which becomes the base pointer of the new frame
 			vm.pushFrame(frame)
+			// This reserves the space on the stack for locals
+			// Note that this reserved slots might contain no or OLD values/""dangling pointers"" - But we don't care about this.
+			vm.sp = frame.basePointer + comFun.NumLocals
 		case code.OpReturnValue:
 			// Inside the function frame, pop the topmost value of the stack which is the returnValue and set it aside
 			returnValue := vm.pop()
-			vm.popFrame()               // Pop the frame tied to this returning function so the control is handed back to calling context on the next cycle
-			vm.pop()                    // Then we pop the object.CompiledFunction of the stack since we don't need it anymore, and it's execution is done
+			frame := vm.popFrame() // Pop the frame tied to this returning function so the control is handed back to calling context on the next cycle
+			// vm.sp = frame.basePointer clears the function workspace and locals...but it would leave the object.CompiledFunction still on the stack
+			// vm.sp = frame.basePointer - 1 also removes functionObject...
+			vm.sp = frame.basePointer - 1
 			err := vm.push(returnValue) // and we push the return value back onto the stack in its place.
 			if err != nil {
 				return err
 			}
 		case code.OpReturn: // Function with no return value returning - No value == Monkey Null
-			vm.popFrame() // Pop the frame
-			vm.pop()      // Pop the object.CompiledFunction
+			frame := vm.popFrame() // Pop the frame
+			vm.sp = frame.basePointer - 1
 			err := vm.push(Null)
+			if err != nil {
+				return err
+			}
+		case code.OpSetLocal:
+			localIndex := code.ReadUint8(frameInstructions[instructionPointer+1:])
+			vm.currentFrame().ip += 1
+			frame := vm.currentFrame()
+			// We take the base pointer of the frame and add the index of the binding as the offset
+			vm.stack[frame.basePointer+int(localIndex)] = vm.pop()
+		case code.OpGetLocal:
+			localIndex := code.ReadUint8(frameInstructions[instructionPointer+1:])
+			vm.currentFrame().ip += 1
+			frame := vm.currentFrame()
+			err := vm.push(vm.stack[frame.basePointer+int(localIndex)])
 			if err != nil {
 				return err
 			}

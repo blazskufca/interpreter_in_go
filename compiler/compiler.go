@@ -43,13 +43,15 @@ type CompilationScope struct {
 }
 
 // enterScope creates and "enters" a new compiler scope. It does so by creating a new CompilationScope, appending it to
-// the compiler scope stack (Compiler.scopes) and incrementing the compiler scope index (Compiler.scopeIndex)
+// the compiler scope stack (Compiler.scopes) and incrementing the compiler scope index (Compiler.scopeIndex).
+// Note that enterScope also creates a new, enclosed, SymbolTable (NewEnclosedSymbolTable) and sets it as Compiler.symbolTable.
 func (c *Compiler) enterScope() {
 	scope := CompilationScope{
 		instructions:        code.Instructions{},
 		previousInstruction: EmittedInstruction{},
 		lastInstruction:     EmittedInstruction{},
 	}
+	c.symbolTable = NewEnclosedSymbolTable(c.symbolTable) // Create a new enclosed symbol table with each scope.
 	c.scopes = append(c.scopes, scope)
 	c.scopeIndex++
 }
@@ -57,10 +59,12 @@ func (c *Compiler) enterScope() {
 // leaveScope "leaves" a CompilationScope by removing it from Compiler.scopes stack and decrementing the Compiler.scopeIndex.
 // It also temporarily saves all the CompilationScope.instructions of the scope which is about to be removed, so they
 // can be returned to the caller when the Compiler leaves the CompilationScope and leaveScope method returns.
+// Note that leaveScope also resets the Compiler.symbolTable to the SymbolTable.Outer as it is leaving the scope.
 func (c *Compiler) leaveScope() code.Instructions {
 	instructions := c.currentInstructions()
 	c.scopes = c.scopes[:len(c.scopes)-1]
 	c.scopeIndex--
+	c.symbolTable = c.symbolTable.Outer
 	return instructions
 }
 
@@ -246,7 +250,13 @@ func (c *Compiler) Compile(node ast.Node) error {
 		// Node.Name is the *ast.Identifier, the left side of the let statement
 		// Therefore the node.Name.Value is the name of the Identifier, the string itself.
 		symbol := c.symbolTable.Define(node.Name.Value)
-		c.emit(code.OpSetGlobal, symbol.Index) // put the symbol we created above into the bytecode as described in code/code.go
+		// Ask the SymbolTable what's the correct scope for this variable...
+		if symbol.Scope == GlobalScope {
+			c.emit(code.OpSetGlobal, symbol.Index) // put the symbol we created above into the bytecode as described in code/code.go
+		} else {
+			c.emit(code.OpSetLocal, symbol.Index)
+		}
+
 	case *ast.Identifier:
 		// For every identifier we come across check if it's a "known" symbol otherwise we return a COMPILE time error...
 		// In the evaluator we did this at runtime...Now we don't have to
@@ -254,8 +264,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if !ok {
 			return errors.New("Undefined symbol: " + node.Value)
 		}
-		// If we have the symbol we can emit a OpGetGlobal to cause the VM to stack load it
-		c.emit(code.OpGetGlobal, symbol.Index)
+		// Again, listen to the SymbolTable regarding what scope was this Symbol defined on
+		if symbol.Scope == GlobalScope {
+			c.emit(code.OpGetGlobal, symbol.Index)
+		} else {
+			c.emit(code.OpGetLocal, symbol.Index)
+		}
 	case *ast.StringLiteral:
 		str := &object.String{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(str))
@@ -319,10 +333,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpReturn)
 		}
 
+		numLocals := c.symbolTable.numDefinitions // ask the SymbolTable how many [local] symbols were defined
+
 		instructions := c.leaveScope() // Now we want to leave the scope and collect the instructions which were compiled in that scope
 
-		compiledFunction := &object.CompiledFunction{Instructions: instructions} // So we can create the object we've talked about
-		c.emit(code.OpConstant, c.addConstant(compiledFunction))                 // And push the compiled function object into the constants pool...
+		compiledFunction := &object.CompiledFunction{Instructions: instructions, NumLocals: numLocals} // So we can create the object we've talked about
+		c.emit(code.OpConstant, c.addConstant(compiledFunction))                                       // And push the compiled function object into the constants pool...
 	case *ast.ReturnStatement:
 		err := c.Compile(node.ReturnValue)
 		if err != nil {

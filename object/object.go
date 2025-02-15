@@ -468,9 +468,30 @@ CompiledFunction would then be:
 										| OpReturnValue    | <--- Return value on top     |
 										|                  |      of stack                |
 										+------------------+------------------------------+
+
+NumLocals is used so that the VM can reserve appropriate amount of stack space:
+
+															+----------------+
+															|                |
+															+----------------+
+															|                |
+															+----------------+
+												vm.sp -->   |                |
+															+----------------+ -----+
+															|    Local 2     |		|
+															+----------------+		| -- reserved for locals
+															|    Local 1     |     	|
+															+----------------+ -----+
+															|   Function     |
+															+----------------+ -----+
+															| Other Value 2  |		|
+															+----------------+ 		| -- pushed before call
+															| Other Value 1  |     	|
+															+----------------+ -----+
 */
 type CompiledFunction struct {
 	Instructions code.Instructions // Instructions are the bytecode instructions of a function
+	NumLocals    int               // NumLocals will be passed to the vm.VM so it can reserve the stack space for them.
 }
 
 // Type on CompiledFunction type fulfils the Object.Type interface method.

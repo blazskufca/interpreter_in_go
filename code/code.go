@@ -257,6 +257,69 @@ This would be a CompiledFunction object for the source code above:
 											|                  |      of stack                |
 											+------------------+------------------------------+
 */
+/*
+LOCAL BINDINGS:
+
+We know that local bindings come with a unique index, just like globals.
+
+So we can use the operand of OpSetLocal as the index into the data structure. But which store? If we just put everything
+into globals data structure then there is no point in having locals at all!
+
+There are two possible options with which we could answer this question:
+
+	1. We could dynamically allocate local bindings and store them in their own data structure, a slice or whatever.
+		Everytime we need a new locals storage, we allocate a new empty slice and use it to work with the locals.
+
+	2. If we think about it, we already have a place where we store function relevant data - The VM stack. So why not
+		reuse it for locals too? It's a bit harder to implement, but as a bonus not only will we see how to do this in VM
+		but we'll also gain more insight into low level operations of real machines, since this is how real machines store locals.
+
+We'll be going with the second option and here is how it works:
+
+	1. We come across an OpCall instruction - We are about to execute the object.CompiledFunction sitting on top of the stack,
+		we store the stack pointer
+
+	2. We increase the stack pointer by the number of locals used within the function
+		- Result of this is a "hole" in the stack - We've incremented the stack pointer, but we did not push anything onto
+			it.
+		a.) Below this "hole" are all the values previously pushed onto the stack, i.e. values before the function call
+		b.) Above the "hole" is stack which is available for use in the function itself - The function workspace
+		c.) The "hole" itself is where we'll be storing the local bindings. We'll index into this "hole" instead of some
+			outer data structure.
+		- Excusing for some minor differences (like our stack growing up and real stack growing "down"), this is also
+			how you would do it in x86_64 assembly:
+
+													some_func:
+														enter $16, $0		# Reserves 16 bytes for locals (hole) - 16 bytes because on real machines it a good idea to keep the stack aligned to multiples of 16
+														movq $1, -8(%rbp)   # Stores 1 in the first local slot
+														movq -8(%rbp), %rax	# Load the local into RAX register...Pointless, just to showcase
+														leave 				# When finishing the function execution clean up the stack
+														ret					# Return the RAX, which has the local in it, which is 1.
+
+		- Here is a diagram for this idea of making "holes" in the stack to store locals
+
+															+----------------+
+															|                |
+															+----------------+
+															|                |
+															+----------------+
+												vm.sp -->   |                |
+															+----------------+ -----+
+															|    Local 2     |		|
+															+----------------+		| -- reserved for locals
+															|    Local 1     |     	|
+															+----------------+ -----+
+															|   Function     |
+															+----------------+ -----+
+															| Other Value 2  |		|
+															+----------------+ 		| -- pushed before call
+															| Other Value 1  |     	|
+															+----------------+ -----+
+
+	- A beauty of this approach is how we can "clean up" a function which has finished executing and is about to return!
+		- Since we've saved the stack pointer before we started the execution we can now just restore it.
+			- Not only will this clean up the "function workspace" but it will also remove all the locals
+*/
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
 
@@ -285,6 +348,8 @@ const (
 	OpCall                        // OpCall is a bytecode representation of a function call
 	OpReturnValue                 // OpReturnValue represents both explicit and implicit returns from a function in bytecode
 	OpReturn                      // OpReturn signifies a return from a Monkey function with NO return value (no implicit and no explicit return)
+	OpGetLocal                    // OpGetLocal instructs the vm.VM to load the value from locals store and load it onto the stack
+	OpSetLocal                    // OpSetLocal instructs the vm.VM to pop the topmost stack value and store it into locals store at specified index
 )
 
 type Instructions []byte
@@ -419,6 +484,14 @@ And:
 												fn() { let a = 1; } // Example 2
 
 OpReturn is meant to instruct the vm.VM on how to correctly handle such functions. OpReturn opcode has no operands.
+
+OpGetLocal: Instructs the vm.VM to load a value from locals store at the specified index onto the vm.VM stack. It has a
+single 1 byte operand, which is the index of the value to load in the locals store. Since operand is a single byte operand
+the maximum numbers of locals a scope can have is 256!
+
+OpSetLocal: Instructs the vm.VM to store topmost stack  value into locals store at the specified index. It has a
+single 1 byte operand, which is the index under which the value should be stored in the locals store. Since operand is a single byte operand
+the maximum numbers of locals you can have is 256!
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -445,6 +518,8 @@ var definitions = map[Opcode]*Definition{
 	OpCall:          {"OpCall", []int{}},
 	OpReturnValue:   {"OpReturnValue", []int{}},
 	OpReturn:        {"OpReturn", []int{}},
+	OpGetLocal:      {"OpGetLocal", []int{1}},
+	OpSetLocal:      {"OpSetLocal", []int{1}},
 }
 
 // Lookup looks up the byte in the definitions map.
@@ -489,6 +564,8 @@ func Make(op Opcode, operands ...int) []byte {
 		switch width {
 		case 2:
 			binary.BigEndian.PutUint16(instruction[offset:], uint16(o))
+		case 1:
+			instruction[offset] = byte(o)
 		}
 		offset += width
 	}
@@ -504,11 +581,16 @@ func ReadOperands(def *Definition, ins Instructions) ([]int, int) {
 		switch width {
 		case 2:
 			operands[i] = int(ReadUint16(ins[offset:]))
+		case 1:
+			operands[i] = int(ReadUint8(ins[offset:]))
 		}
 		offset += width
 	}
 	return operands, offset
 }
+
+// ReadUint8 is a simple helper method. It reads a single byte instructions.
+func ReadUint8(ins Instructions) uint8 { return uint8(ins[0]) }
 
 // ReadUint16 is a simple helper method.
 // It returns a uint16 integer from a received byte slice on type Instructions.
