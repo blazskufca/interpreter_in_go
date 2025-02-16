@@ -59,18 +59,18 @@ What we'll do is make a new stack for Frames instead of keeping them on our main
 
 // Frame is a call/stack frame or rather an activation record (https://www.sciencedirect.com/topics/computer-science/activation-record)
 type Frame struct {
-	fn          *object.CompiledFunction // fn points to the *object.CompiledFunction for which this stack frame is for
-	ip          int                      // ip is the instruction pointer in this frame, for this function.
-	basePointer int                      // basePointer or sometimes frame pointer, points to the "base" (bottom) of the stack in the current frame
+	cl          *object.Closure // cl points to the *object.Closure for which this stack frame is for
+	ip          int             // ip is the instruction pointer in this frame, for this function.
+	basePointer int             // basePointer or sometimes frame pointer, points to the "base" (bottom) of the stack in the current frame
 }
 
 // NewFrame returns a pointer to a new activation record which references the given function. The Frame.ip is initialized
 // to -1.
-func NewFrame(fn *object.CompiledFunction, basePointer int) *Frame {
-	return &Frame{fn: fn, ip: -1, basePointer: basePointer}
+func NewFrame(cl *object.Closure, basePointer int) *Frame {
+	return &Frame{cl: cl, ip: -1, basePointer: basePointer}
 }
 
 // Instructions returns code.Instructions for a function referenced by this activation record.
 func (f *Frame) Instructions() code.Instructions {
-	return f.fn.Instructions
+	return f.cl.Fn.Instructions
 }

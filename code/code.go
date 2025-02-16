@@ -364,37 +364,105 @@ Or rather, more correct diagram, accounting for Frames and base pointer, is this
 													   |   Function     |
 													   +----------------+
 */
+/*
+CLOSURES:
+
+The problem:
+Suppose we have this Monkey source code:
+
+													let newAdder = fn(a) {
+														let adder = fn(b) { a + b; };
+														return adder;
+													};
+														let addTwo = newAdder(2);
+														addTwo(3); // => 5
+
+The first thing that happens in our bytecode interpreter is that we compile this.
+	- Both the newAdder and the adder functions are turned into series of bytecode instructions and afterward put into the
+		constant pool so that the VM can access them and load them onto the stack before the execution.
+
+	- The vm loads the functions from the constants pool and at that time the value of 'a' becomes known.
+		- However, it's too late. The adder function has also already been compiled without any chance to close over the
+			value of 'a'.
+
+So to recap the problem. We need to get the value of 'a' into the adder function after it has already been compiled, before it's
+returned from the newAdder function. And not only that, we need to do this in such a way that new adder has access to the value of
+'a' even after the scope of the newAdder expires...It needs to be closed over afterall.
+
+We need to give compiled functions the ability to hold bindings that are only created at run time and their instructions
+must already reference said bindings. And then, at run time, we need to instruct the VM to make these bindings available
+to the function at the right time.
+
+So how will we go about this?
+
+Firstly, we'll borrow from GNU Guile - https://www.gnu.org/software/guile/
+
+Secondly, we'll define a new term - 'free variable' - Free variables are those which are neither defined in the current local
+scope nor are they parameters of the current function. Another definition of a 'free variable' is that free variables are
+those variables which are used locally, but are defined in the enclosing scope. https://en.wikipedia.org/wiki/Free_variables_and_bound_variables
+
+So from the POV of 'adder', 'a' is a free variable:
+
+													let newAdder = fn(a) {
+														let adder = fn(b) { a + b; };
+														return adder;
+													};
+
+Implementing closures in bytecode virtual machines and compilers revolves around 'free variables' - The compiler needs to detect
+them and the VM needs to load them onto the stack even when they are out of scope.
+
+So what we'll do is turn every function into a closure. The user does not need to make function a closure, but every functions
+is a closure nonetheless under the hood:
+
+	1. We'll add a object.Closure which will have a pointer field to object.CompiledFunction and a place to store 'free variables'
+
+	2. We'll still compile a ast.FunctionLiteral into a object.CompiledFunction and load it into the constants pool.
+
+	3. However while we are compiling ast.FunctionLiterals we'll inspect every symbol to try and find all the 'free variables'
+		- a.) If it is a 'free variable' we won't be emitting a OpGetLocal/OpGetGlobal but a new OpCode which loads the reference
+				from object.Closure.
+	4. After the function is compiled we'll check if we did find any references to 'free variables', how many of them and in
+		which scope were they originally defined
+
+	5. Then we'll emit a couple new opcodes based on weather the variable is a free variable.
+
+To recap: detect references to free variables while compiling a function, get the referenced values on to the stack,
+merge the values and the compiled function into a closure and leave it on the stack where it can then be called.
+*/
 // Instructions consist of an Opcode (specifies the VM operation) and an arbitrary number of operands (0+).
 // Opcode is always 1 byte long, operands can be multibyte.
 
 const (
-	OpConstant      Opcode = iota // OpConstant is a ""pointer"" into the compilers constants pool
-	OpAdd                         // OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
-	OpPop                         // OpPop instructs the Monkey virtual machine to pop the topmost object of its stack.
-	OpSub                         // OpSub is a byte code instruction for arithmetic - operations
-	OpMul                         // OpMul is the bytecode instruction for arithmetic * operations
-	OpDiv                         // OpDiv is the bytecode instruction for arithmetic / operations
-	OpTrue                        // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
-	OpFalse                       // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
-	OpEqual                       // OpEqual represents the == in bytecode
-	OpNotEqual                    // OpNotEqual represents the != in bytecode
-	OpGreaterThan                 // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
-	OpMinus                       // OpMinus causes the Monkey virtual machine to negate integers. It represents -
-	OpBang                        // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
-	OpJumpNotTruthy               // OpJumpNotTruthy is the bytecode representation of conditional jump instruction
-	OpJump                        // OpJump is the bytecode representation of a non-conditional jump instruction
-	OpNull                        // OpNull instruction represents a lack of value in Monkey or rather a *object.Null in Monkey object system
-	OpGetGlobal                   // OpGetGlobal will instruct the vm.VM to load the value from global store and load it onto the VM stack
-	OpSetGlobal                   // OpSetGlobal will instruct the vm.VM to pop the topmost stack value and store it into the global store at the specified index.
-	OpArray                       // OpArray encodes the instruction which instructs the vm.VM to dynamically build an array based on the operand value
-	OpHash                        // OpHash instruct the monkey vm.VM to build a dynamic hash literal
-	OpIndex                       // OpIndex represents the index operator in bytecode
-	OpCall                        // OpCall is a bytecode representation of a function call
-	OpReturnValue                 // OpReturnValue represents both explicit and implicit returns from a function in bytecode
-	OpReturn                      // OpReturn signifies a return from a Monkey function with NO return value (no implicit and no explicit return)
-	OpGetLocal                    // OpGetLocal instructs the vm.VM to load the value from locals store and load it onto the stack
-	OpSetLocal                    // OpSetLocal instructs the vm.VM to pop the topmost stack value and store it into locals store at specified index
-	OpGetBuiltin                  // OpGetBuiltin holds the index of a builtin and instructs the vm.VM to load it onto the stack.
+	OpConstant       Opcode = iota // OpConstant is a ""pointer"" into the compilers constants pool
+	OpAdd                          // OpAdd tells the Monkey virtual machine to pop 2 elements from the top of the stack and add them together
+	OpPop                          // OpPop instructs the Monkey virtual machine to pop the topmost object of its stack.
+	OpSub                          // OpSub is a byte code instruction for arithmetic - operations
+	OpMul                          // OpMul is the bytecode instruction for arithmetic * operations
+	OpDiv                          // OpDiv is the bytecode instruction for arithmetic / operations
+	OpTrue                         // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpFalse                        // OpTrue is the bytecode instruction for pushing a object.Boolean onto the stack
+	OpEqual                        // OpEqual represents the == in bytecode
+	OpNotEqual                     // OpNotEqual represents the != in bytecode
+	OpGreaterThan                  // OpGreaterThan represents the > in the bytecode. There is no OpLessThan because instead bytecode is reordered and OpGreaterThan operator is reused.
+	OpMinus                        // OpMinus causes the Monkey virtual machine to negate integers. It represents -
+	OpBang                         // OpBang causes the Monkey virtual machine to negate booleans. It represents the !
+	OpJumpNotTruthy                // OpJumpNotTruthy is the bytecode representation of conditional jump instruction
+	OpJump                         // OpJump is the bytecode representation of a non-conditional jump instruction
+	OpNull                         // OpNull instruction represents a lack of value in Monkey or rather a *object.Null in Monkey object system
+	OpGetGlobal                    // OpGetGlobal will instruct the vm.VM to load the value from global store and load it onto the VM stack
+	OpSetGlobal                    // OpSetGlobal will instruct the vm.VM to pop the topmost stack value and store it into the global store at the specified index.
+	OpArray                        // OpArray encodes the instruction which instructs the vm.VM to dynamically build an array based on the operand value
+	OpHash                         // OpHash instruct the monkey vm.VM to build a dynamic hash literal
+	OpIndex                        // OpIndex represents the index operator in bytecode
+	OpCall                         // OpCall is a bytecode representation of a function call
+	OpReturnValue                  // OpReturnValue represents both explicit and implicit returns from a function in bytecode
+	OpReturn                       // OpReturn signifies a return from a Monkey function with NO return value (no implicit and no explicit return)
+	OpGetLocal                     // OpGetLocal instructs the vm.VM to load the value from locals store and load it onto the stack
+	OpSetLocal                     // OpSetLocal instructs the vm.VM to pop the topmost stack value and store it into locals store at specified index
+	OpGetBuiltin                   // OpGetBuiltin holds the index of a builtin and instructs the vm.VM to load it onto the stack.
+	OpClosure                      // OpClosure instructs the vm.VM to wrap a object.Function into object.CompiledFunction into a object.Closure.
+	OpGetFree                      // OpGetFree instructs the vm.VM to load the a 'free variable' from object.Closure 'Free' pool onto the stack
+	OpCurrentClosure               // OpCurrentClosure Instructs the vm.VM to load the object.Closure it's currently executing on top of the stack.
 )
 
 type Instructions []byte
@@ -427,6 +495,8 @@ func (ins Instructions) fmtInstruction(def *Definition, operands []int) string {
 		return def.Name
 	case 1:
 		return fmt.Sprintf("%s %d", def.Name, operands[0])
+	case 2:
+		return fmt.Sprintf("%s %d %d", def.Name, operands[0], operands[1])
 	}
 	return fmt.Sprintf("ERROR: unhandled operandCount for %s\n", def.Name)
 }
@@ -545,35 +615,53 @@ BUILTINS:
 OpGetBuiltin: Instructs the vm.VM to find the object.Builtin function in the object.Builtins slice and load it onto
 its stack in order to execute it. It has a single 1-byte operand, which is the index of the object.Builtin in the object.Builtins
 slice. Since this operand has a width of 1-byte it means a maximum of 256 builtin functions can be defined!
+
+CLOSURES:
+
+OpClosure: Instructs the vm.VM to wrap a object.CompiledFunction into a object.Closure. This opcode has two operands.
+The first 2-byte operand is a index into the constants pool so that the vm can find a function which needs to be wrapped.
+The second 1-byte operand specifies how many free variables sit on the stack and need to be transferred into the about to
+be created closure. Since it is a single byte, the maximum amount of free variables it can move into a closure, and there
+the maximum number of variables a Monkey closure can close over, is 256!
+
+OpGetFree: Is used to instruct the vm.VM to load so called 'free variable' from object.Closure.Free pool. It has a single
+1-byte operand. Therefore, the maximum is 256, same as the second operand of the OpClosure.
+
+OpCurrentClosure: Is used to address the self-referencing closures. Instead of loading them onto the stack with OpSetLocal
+we load them with OpCurrentClosure - OpCurrentClosure causes the vm.VM to load the object.Closure it's currently executing
+on top of the stack. OpCurrentClosure has no operands.
 */
 var definitions = map[Opcode]*Definition{
-	OpConstant:      {"OpConstant", []int{2}},
-	OpAdd:           {"OpAdd", []int{}},
-	OpPop:           {"OpPop", []int{}},
-	OpSub:           {"OpSub", []int{}},
-	OpMul:           {"OpMul", []int{}},
-	OpDiv:           {"OpDiv", []int{}},
-	OpTrue:          {"OpTrue", []int{}},
-	OpFalse:         {"OpFalse", []int{}},
-	OpEqual:         {"OpEqual", []int{}},
-	OpNotEqual:      {"OpNotEqual", []int{}},
-	OpGreaterThan:   {"OpGreaterThan", []int{}},
-	OpMinus:         {"OpMinus", []int{}},
-	OpBang:          {"OpBang", []int{}},
-	OpJumpNotTruthy: {"OpJumpNotTruthy", []int{2}},
-	OpJump:          {"OpJump", []int{2}},
-	OpNull:          {"OpNull", []int{}},
-	OpGetGlobal:     {"OpGetGlobal", []int{2}},
-	OpSetGlobal:     {"OpSetGlobal", []int{2}},
-	OpArray:         {"OpArray", []int{2}},
-	OpHash:          {"OpHash", []int{2}},
-	OpIndex:         {"OpIndex", []int{}},
-	OpCall:          {"OpCall", []int{1}},
-	OpReturnValue:   {"OpReturnValue", []int{}},
-	OpReturn:        {"OpReturn", []int{}},
-	OpGetLocal:      {"OpGetLocal", []int{1}},
-	OpSetLocal:      {"OpSetLocal", []int{1}},
-	OpGetBuiltin:    {"OpGetBuiltin", []int{1}},
+	OpConstant:       {"OpConstant", []int{2}},
+	OpAdd:            {"OpAdd", []int{}},
+	OpPop:            {"OpPop", []int{}},
+	OpSub:            {"OpSub", []int{}},
+	OpMul:            {"OpMul", []int{}},
+	OpDiv:            {"OpDiv", []int{}},
+	OpTrue:           {"OpTrue", []int{}},
+	OpFalse:          {"OpFalse", []int{}},
+	OpEqual:          {"OpEqual", []int{}},
+	OpNotEqual:       {"OpNotEqual", []int{}},
+	OpGreaterThan:    {"OpGreaterThan", []int{}},
+	OpMinus:          {"OpMinus", []int{}},
+	OpBang:           {"OpBang", []int{}},
+	OpJumpNotTruthy:  {"OpJumpNotTruthy", []int{2}},
+	OpJump:           {"OpJump", []int{2}},
+	OpNull:           {"OpNull", []int{}},
+	OpGetGlobal:      {"OpGetGlobal", []int{2}},
+	OpSetGlobal:      {"OpSetGlobal", []int{2}},
+	OpArray:          {"OpArray", []int{2}},
+	OpHash:           {"OpHash", []int{2}},
+	OpIndex:          {"OpIndex", []int{}},
+	OpCall:           {"OpCall", []int{1}},
+	OpReturnValue:    {"OpReturnValue", []int{}},
+	OpReturn:         {"OpReturn", []int{}},
+	OpGetLocal:       {"OpGetLocal", []int{1}},
+	OpSetLocal:       {"OpSetLocal", []int{1}},
+	OpGetBuiltin:     {"OpGetBuiltin", []int{1}},
+	OpClosure:        {"OpClosure", []int{2, 1}},
+	OpGetFree:        {"OpGetFree", []int{1}},
+	OpCurrentClosure: {"OpCurrentClosure", []int{}},
 }
 
 // Lookup looks up the byte in the definitions map.

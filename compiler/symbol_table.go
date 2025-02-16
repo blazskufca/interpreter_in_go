@@ -24,6 +24,12 @@ const (
 	LocalScope SymbolScope = "LOCAL"
 	// BuiltinScope is the scope on which the builtin functions/object.Builtin are defined
 	BuiltinScope SymbolScope = "BUILTIN"
+	// FreeScope is meant to represent variables which are 'free' - Variables which are not defined in the scope of the
+	// function nor are they parameters to the function, but the function references them nonetheless.
+	// https://en.wikipedia.org/wiki/Free_variables_and_bound_variables
+	FreeScope SymbolScope = "FREE"
+	// FunctionScope is used to track self-references when compiling functions
+	FunctionScope SymbolScope = "FUNCTION"
 )
 
 // DefineBuiltin defines a symbol to a builtin function/object.Builtin.
@@ -46,12 +52,14 @@ type SymbolTable struct {
 	Outer          *SymbolTable      // Outer is the enclosed SymbolTable
 	store          map[string]Symbol // store associates the identifier we come across in Monkey source cods with a Symbol
 	numDefinitions int               // numDefinitions just tracks how many Symbols we know about/have bound with identifiers
+	FreeSymbols    []Symbol          // FreeSymbols contains the symbols which are within the FreeScope.
 }
 
 // NewSymbolTable returns a pointer to a new initialized SymbolTable.
 func NewSymbolTable() *SymbolTable {
 	return &SymbolTable{
 		store:          make(map[string]Symbol),
+		FreeSymbols:    []Symbol{},
 		numDefinitions: 0,
 	}
 }
@@ -90,7 +98,32 @@ func (s *SymbolTable) Resolve(name string) (Symbol, bool) {
 	sym, ok := s.store[name]
 	if !ok && s.Outer != nil {
 		obj, ok := s.Outer.Resolve(name) // Bubble up searching for Symbol bound to this identifier
-		return obj, ok
+		if !ok {
+			return obj, ok
+		}
+		if obj.Scope == GlobalScope || obj.Scope == BuiltinScope {
+			return obj, ok
+		}
+		free := s.defineFree(obj)
+		return free, true
 	}
 	return sym, ok
+}
+
+// defineFree appends the original Symbol to SymbolTable.FreeSymbols, and then creates a new symbol with the same name
+// but a FreeScope scope and Symbol.Index set to the index of SymbolTable.FreeSymbols and stores this new Symbol in the
+// SymbolTable map under the original symbol name then returns it.
+func (s *SymbolTable) defineFree(original Symbol) Symbol {
+	s.FreeSymbols = append(s.FreeSymbols, original)
+	symbol := Symbol{Name: original.Name, Index: len(s.FreeSymbols) - 1, Scope: FreeScope}
+	s.store[original.Name] = symbol
+	return symbol
+}
+
+// DefineFunctionName is used to detect self-referencing functions, which in turn is used to emit a code.OpCurrentClosure
+// instead of a code.OpGetGlobal.
+func (s *SymbolTable) DefineFunctionName(name string) Symbol {
+	symbol := Symbol{Name: name, Index: 0, Scope: FunctionScope}
+	s.store[name] = symbol
+	return symbol
 }

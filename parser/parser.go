@@ -272,6 +272,10 @@ func (p *Parser) parseLetStatement() *ast.LetStatement {
 	// Get the actual value in let <identifier> = <expression>;, i.e. the <expression> part...
 	statement.Value = p.parseExpression(LOWEST)
 
+	if fl, ok := statement.Value.(*ast.FunctionLiteral); ok { // If the right side of the = is a function literal, save the name!
+		fl.Name = statement.Name.Value
+	}
+
 	// If there was a semicolon advance past it
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()

@@ -65,7 +65,8 @@ func (vm *VM) popFrame() *Frame {
 // A new, main Frame (NewFrame) is created and pushed onto the frame stack.
 func New(bytecode *compiler.Bytecode) *VM {
 	mainFn := &object.CompiledFunction{Instructions: bytecode.Instructions}
-	mainFrame := NewFrame(mainFn, 0)
+	mainClosure := &object.Closure{Fn: mainFn} // Since everything is a closure we actually need to make this a closure too
+	mainFrame := NewFrame(mainClosure, 0)
 	frames := make([]*Frame, MaxFrames)
 	frames[0] = mainFrame
 	return &VM{constants: bytecode.Constants,
@@ -271,9 +272,51 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpClosure:
+			constantPoolIndex := code.ReadUint16(frameInstructions[instructionPointer+1:]) // First 2-byte operands
+			numFree := code.ReadUint8(frameInstructions[instructionPointer+3:])            // second 1-byte operand
+			vm.currentFrame().ip += 3
+
+			err := vm.pushClosure(int(constantPoolIndex), int(numFree))
+			if err != nil {
+				return err
+			}
+		case code.OpGetFree: // The only real difference between this and other OpGet* is that we load from closure instead of stack...
+			freeIndex := code.ReadUint8(frameInstructions[instructionPointer+1:])
+			vm.currentFrame().ip += 1
+			currentClosure := vm.currentFrame().cl
+			err := vm.push(currentClosure.Free[freeIndex])
+			if err != nil {
+				return err
+			}
+		case code.OpCurrentClosure:
+			currentClosure := vm.currentFrame().cl
+			err := vm.push(currentClosure)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// pushClosure creates and pushes a object.Closure on top of the VM stack.
+// It fails and returns an error if the loaded constant from the constants pool is not an *object.CompiledFunction or if
+// pushing to VM stack causes an stack overflow.
+func (vm *VM) pushClosure(constantPoolIndex, numFree int) error {
+	constant := vm.constants[constantPoolIndex]
+	function, ok := constant.(*object.CompiledFunction)
+	if !ok {
+		return errors.New("constant is not a object.CompiledFunction: " + string(constant.Type()))
+	}
+	free := make([]object.Object, numFree)
+
+	for i := range numFree {
+		free[i] = vm.stack[vm.sp-numFree+i] // Copy the free variables from the stack to the free storage
+	}
+	vm.sp = vm.sp - numFree // Clean up the stack of free variables
+	closure := &object.Closure{Fn: function, Free: free}
+	return vm.push(closure)
 }
 
 // executeCall dispatches a correct calling procedure based on weather a user defined function or a builtin function
@@ -282,10 +325,12 @@ func (vm *VM) Run() error {
 func (vm *VM) executeCall(numArgs int) error {
 	callee := vm.stack[vm.sp-1-numArgs] // Find the function on the stack
 	switch callee := callee.(type) {
-	case *object.CompiledFunction:
-		return vm.callFunction(callee, numArgs)
+	case *object.Closure:
+		return vm.callClosure(callee, numArgs)
 	case *object.Builtin:
 		return vm.callBuiltin(callee, numArgs)
+	case *object.CompiledFunction:
+		return errors.New("got object.CompiledFunction but every function in monkey is object.Closure: " + string(callee.Type()))
 	default:
 		return errors.New("tried to call a non-function or a non-builtin function: " + string(callee.Type()))
 	}
@@ -305,12 +350,12 @@ func (vm *VM) callBuiltin(builtin *object.Builtin, numArgs int) error {
 	}
 }
 
-// callFunction take care of ""finding"" object.CompiledFunction on the VM stack, checking it really is a CompiledFunction
+// callClosure take care of ""finding"" object.CompiledFunction on the VM stack, checking it really is a CompiledFunction
 // creating a new Frame for this function, pushing this frame into VM.frames stack and adjusting the VM.sp stack pointer.
 // If any error occurs during any part of this process, it's returned to the caller.
-func (vm *VM) callFunction(fn *object.CompiledFunction, numArguments int) error {
-	if numArguments != fn.NumParameters {
-		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", fn.NumParameters, numArguments)
+func (vm *VM) callClosure(cl *object.Closure, numArguments int) error {
+	if numArguments != cl.Fn.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", cl.Fn.NumParameters, numArguments)
 	}
 	// As a result of creating a new frame with a reference to a function we've pulled off the stack
 	// and then pushing the frame onto VM frames stack, the fetch-decode-execute cycle will execute the function
@@ -350,11 +395,11 @@ func (vm *VM) callFunction(fn *object.CompiledFunction, numArguments int) error 
 
 														basePointer = vm.sp -numArguments
 	*/
-	frame := NewFrame(fn, vm.sp-numArguments) // Also save the current stack pointer which becomes the base pointer of the new frame
+	frame := NewFrame(cl, vm.sp-numArguments) // Also save the current stack pointer which becomes the base pointer of the new frame
 	vm.pushFrame(frame)
 	// This reserves the space on the stack for locals
 	// Note that this reserved slots might contain no or OLD values/""dangling pointers"" - But we don't care about this.
-	vm.sp = frame.basePointer + fn.NumLocals
+	vm.sp = frame.basePointer + cl.Fn.NumLocals
 	return nil
 }
 

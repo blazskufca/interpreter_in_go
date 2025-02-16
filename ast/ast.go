@@ -2,6 +2,7 @@ package ast
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/blazskufca/interpreter_in_go/token"
 	"strings"
 )
@@ -306,6 +307,7 @@ type FunctionLiteral struct {
 	Token      token.Token     // Token is the "fn" token
 	Parameters []*Identifier   // Parameters are the function parameters in Monkey lang -> fn <parameters <<parameter one>, <parameter two>, <parameter three>, ...> > <block statement>
 	Body       *BlockStatement // Body is the body of the function in Monkey Lang
+	Name       string          // Name is the name where the function literal is bound to
 }
 
 // expressionNode on FunctionLiteral fulfills the Expression interface.
@@ -323,6 +325,9 @@ func (fl *FunctionLiteral) String() string {
 		params = append(params, p.String())
 	}
 	out.WriteString(fl.TokenLiteral())
+	if fl.Name != "" {
+		out.WriteString(fmt.Sprintf("<%s>", fl.Name))
+	}
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") ")

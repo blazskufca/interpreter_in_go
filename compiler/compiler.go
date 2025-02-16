@@ -250,14 +250,16 @@ func (c *Compiler) Compile(node ast.Node) error {
 			}
 		}
 	case *ast.LetStatement:
+		// Define a symbol in the SymbolTable
+		// Node.Name is the *ast.Identifier, the left side of the let statement
+		// Therefore the node.Name.Value is the name of the Identifier, the string itself.
+		// This has to be done before we compile the Value of the node in order for the function closures to be recursive
+		symbol := c.symbolTable.Define(node.Name.Value)
 		err := c.Compile(node.Value)
 		if err != nil {
 			return err
 		}
-		// Define a symbol in the SymbolTable
-		// Node.Name is the *ast.Identifier, the left side of the let statement
-		// Therefore the node.Name.Value is the name of the Identifier, the string itself.
-		symbol := c.symbolTable.Define(node.Name.Value)
+
 		// Ask the SymbolTable what's the correct scope for this variable...
 		if symbol.Scope == GlobalScope {
 			c.emit(code.OpSetGlobal, symbol.Index) // put the symbol we created above into the bytecode as described in code/code.go
@@ -321,6 +323,10 @@ func (c *Compiler) Compile(node ast.Node) error {
 	case *ast.FunctionLiteral:
 		c.enterScope() // We need to create a new scope for this function since we want the bytecode to be "contained"
 
+		// If the function has a name available, define it as a symbol
+		if node.Name != "" {
+			c.symbolTable.DefineFunctionName(node.Name)
+		}
 		for _, p := range node.Parameters { // Define all the function parameters in this scope
 			c.symbolTable.Define(p.Value)
 		}
@@ -340,12 +346,18 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpReturn)
 		}
 
+		freeSymbols := c.symbolTable.FreeSymbols
 		numLocals := c.symbolTable.numDefinitions // ask the SymbolTable how many [local] symbols were defined
 
 		instructions := c.leaveScope() // Now we want to leave the scope and collect the instructions which were compiled in that scope
 
+		for _, s := range freeSymbols {
+			c.loadSymbol(s)
+		}
+
 		compiledFunction := &object.CompiledFunction{Instructions: instructions, NumLocals: numLocals, NumParameters: len(node.Parameters)} // So we can create the object we've talked about
-		c.emit(code.OpConstant, c.addConstant(compiledFunction))                                                                            // And push the compiled function object into the constants pool...
+		fnIndex := c.addConstant(compiledFunction)
+		c.emit(code.OpClosure, fnIndex, len(freeSymbols)) // And push the compiled function object into the constants pool...
 	case *ast.ReturnStatement:
 		err := c.Compile(node.ReturnValue)
 		if err != nil {
@@ -378,6 +390,11 @@ func (c *Compiler) loadSymbol(s Symbol) {
 		c.emit(code.OpGetLocal, s.Index)
 	case BuiltinScope:
 		c.emit(code.OpGetBuiltin, s.Index)
+	case FreeScope:
+		c.emit(code.OpGetFree, s.Index)
+	case FunctionScope:
+		c.emit(code.OpCurrentClosure)
+
 	}
 }
 

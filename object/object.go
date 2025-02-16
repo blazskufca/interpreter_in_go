@@ -70,6 +70,7 @@ const (
 	QUOTE_OBJ             = "QUOTE"
 	MACRO_OBJ             = "MACRO"
 	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ" // COMPILED_FUNCTION_OBJ represents a series of bytecode instructions which represent a function
+	CLOSURE_OBJ           = "CLOSURE"               // CLOSURE_OBJ represent closures in the compiler and the VM
 )
 
 // Object is how any node in the AST is represented when evaluating the AST internally. Note that it's an interface!
@@ -502,4 +503,25 @@ func (cf *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
 // Inspect on CompiledFunction fulfils the Object.Inspect interface method.
 func (cf *CompiledFunction) Inspect() string {
 	return fmt.Sprintf("CompiledFunction[%p]", cf)
+}
+
+// Closure represents the closures in the VM and the compiler. Note that everything, every function, is a closure!
+// That does not mean that the user has to use every function as a closure, but it can be used as a closure.
+type Closure struct {
+	Fn *CompiledFunction // Fn is a reference to the CompiledFunction, i.e. the actual function which is to be executed
+	// Free is meant as 'free variables' - Variables which are not defined in the scope of the function nor are they
+	//parameters to the function, but the function references them nonetheless. They are 'free'.
+	// https://en.wikipedia.org/wiki/Free_variables_and_bound_variables.
+	// Semantically speaking, Free is equivalent to Function.Env, which is used in the in-place evaluator to implement
+	// closures.
+	Free []Object
+}
+
+// Type on Closure type fulfils the Object.Type interface method.
+// It returns a constant, CLOSURE_OBJ.
+func (c *Closure) Type() ObjectType { return CLOSURE_OBJ }
+
+// Inspect on CompiledFunction fulfils the Object.Inspect interface method.
+func (c *Closure) Inspect() string {
+	return fmt.Sprintf("Closure[%p]", c)
 }
