@@ -2,7 +2,6 @@ package repl
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"github.com/blazskufca/interpreter_in_go/compiler"
 	"github.com/blazskufca/interpreter_in_go/evaluator"
@@ -30,7 +29,6 @@ const MONKEY_FACE = `
 
 const PROMPT = ">> "
 
-var MODE string
 var ENV, MACRO_ENV *object.Environment
 var CONSTANTS []object.Object
 var GLOBALS = make([]object.Object, vm.GlobalsSize)
@@ -38,9 +36,7 @@ var SYMBOL_TABLE = compiler.NewSymbolTable()
 
 // Start creates a new bufio.Scanner which reads from "in" io.Reader, creates a new lexer.Lexer which tokenizes the read
 // input and prints out the tokens to "out" io.Writer.
-func Start(in io.Reader, out io.Writer) {
-	flag.StringVar(&MODE, "m", "inplace-evaluator", "Specify which backend is used. inplace-evaluator or bytecode")
-	flag.Parse()
+func Start(in io.Reader, out io.Writer, MODE string) {
 	scanner := bufio.NewScanner(in)
 	if MODE == "inplace-evaluator" {
 		ENV = object.NewEnvironment()
@@ -116,15 +112,17 @@ func Start(in io.Reader, out io.Writer) {
 				continue
 			}
 			stackTop := machine.LastPoppedStackElem()
-			_, err = io.WriteString(out, stackTop.Inspect())
-			if err != nil {
-				log.Printf("failed to write to output: %v", err)
-				continue
-			}
-			_, err = io.WriteString(out, "\n")
-			if err != nil {
-				log.Printf("failed to write to output: %v", err)
-				continue
+			if stackTop == nil && stackTop.Type() == object.ERROR_OBJ {
+				_, err = io.WriteString(out, stackTop.Inspect())
+				if err != nil {
+					log.Printf("failed to write to output: %v", err)
+					continue
+				}
+				_, err = io.WriteString(out, "\n")
+				if err != nil {
+					log.Printf("failed to write to output: %v", err)
+					continue
+				}
 			}
 		}
 
