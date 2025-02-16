@@ -78,12 +78,17 @@ func New() *Compiler {
 		lastInstruction:     EmittedInstruction{},
 		previousInstruction: EmittedInstruction{},
 	}
+	symbolTable := NewSymbolTable()
+	// Define the builtin objects/functions
+	for i, v := range object.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
 	return &Compiler{
 		instructions:    code.Instructions{},
 		constants:       []object.Object{},
 		lastInstruction: EmittedInstruction{},
 		prevInstruction: EmittedInstruction{},
-		symbolTable:     NewSymbolTable(),
+		symbolTable:     symbolTable,
 		scopeIndex:      0,
 		scopes:          []CompilationScope{mainScope},
 	}
@@ -267,12 +272,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if !ok {
 			return errors.New("Undefined symbol: " + node.Value)
 		}
-		// Again, listen to the SymbolTable regarding what scope was this Symbol defined on
-		if symbol.Scope == GlobalScope {
-			c.emit(code.OpGetGlobal, symbol.Index)
-		} else {
-			c.emit(code.OpGetLocal, symbol.Index)
-		}
+		c.loadSymbol(symbol) // Emit the correct bytecode for the given symbol scope
 	case *ast.StringLiteral:
 		str := &object.String{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(str))
@@ -367,6 +367,18 @@ func (c *Compiler) Compile(node ast.Node) error {
 		c.emit(code.OpCall, len(node.Arguments)) // When emitting also emit the number of function arguments
 	}
 	return nil
+}
+
+// loadSymbol emit (s) the correct bytecode for the given Symbol.Scope.
+func (c *Compiler) loadSymbol(s Symbol) {
+	switch s.Scope {
+	case GlobalScope:
+		c.emit(code.OpGetGlobal, s.Index)
+	case LocalScope:
+		c.emit(code.OpGetLocal, s.Index)
+	case BuiltinScope:
+		c.emit(code.OpGetBuiltin, s.Index)
+	}
 }
 
 // replaceLastPopWithReturn is used to handle implicit returns inside *object.CompiledFunction.

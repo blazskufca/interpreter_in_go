@@ -394,6 +394,7 @@ const (
 	OpReturn                      // OpReturn signifies a return from a Monkey function with NO return value (no implicit and no explicit return)
 	OpGetLocal                    // OpGetLocal instructs the vm.VM to load the value from locals store and load it onto the stack
 	OpSetLocal                    // OpSetLocal instructs the vm.VM to pop the topmost stack value and store it into locals store at specified index
+	OpGetBuiltin                  // OpGetBuiltin holds the index of a builtin and instructs the vm.VM to load it onto the stack.
 )
 
 type Instructions []byte
@@ -538,6 +539,12 @@ the maximum numbers of locals a scope can have is 256!
 OpSetLocal: Instructs the vm.VM to store topmost stack  value into locals store at the specified index. It has a
 single 1 byte operand, which is the index under which the value should be stored in the locals store. Since operand is a single byte operand
 the maximum numbers of locals you can have is 256!
+
+BUILTINS:
+
+OpGetBuiltin: Instructs the vm.VM to find the object.Builtin function in the object.Builtins slice and load it onto
+its stack in order to execute it. It has a single 1-byte operand, which is the index of the object.Builtin in the object.Builtins
+slice. Since this operand has a width of 1-byte it means a maximum of 256 builtin functions can be defined!
 */
 var definitions = map[Opcode]*Definition{
 	OpConstant:      {"OpConstant", []int{2}},
@@ -566,6 +573,7 @@ var definitions = map[Opcode]*Definition{
 	OpReturn:        {"OpReturn", []int{}},
 	OpGetLocal:      {"OpGetLocal", []int{1}},
 	OpSetLocal:      {"OpSetLocal", []int{1}},
+	OpGetBuiltin:    {"OpGetBuiltin", []int{1}},
 }
 
 // Lookup looks up the byte in the definitions map.

@@ -227,7 +227,7 @@ func (vm *VM) Run() error {
 			// Read the number of function arguments from the code.OpCall
 			numArgs := code.ReadUint8(frameInstructions[instructionPointer+1:])
 			vm.currentFrame().ip += 1
-			err := vm.callFunction(int(numArgs))
+			err := vm.executeCall(int(numArgs))
 			if err != nil {
 				return err
 			}
@@ -263,23 +263,54 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpGetBuiltin: // Resolves the code.OpGetBuiltin instruction, i.e. looks up the index and loads the object onto the stack
+			builtinIndex := code.ReadUint8(frameInstructions[instructionPointer+1:])
+			vm.currentFrame().ip += 1
+			definition := object.Builtins[builtinIndex]
+			err := vm.push(definition.Builtin)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+// executeCall dispatches a correct calling procedure based on weather a user defined function or a builtin function
+// should be executed.
+// If it's neither of these two types something is wrong therefore an error is returned.
+func (vm *VM) executeCall(numArgs int) error {
+	callee := vm.stack[vm.sp-1-numArgs] // Find the function on the stack
+	switch callee := callee.(type) {
+	case *object.CompiledFunction:
+		return vm.callFunction(callee, numArgs)
+	case *object.Builtin:
+		return vm.callBuiltin(callee, numArgs)
+	default:
+		return errors.New("tried to call a non-function or a non-builtin function: " + string(callee.Type()))
+	}
+}
+
+// callBuiltin takes care of calling object.Builtin function. It collects its arguments of the stack, calculates the correct
+// base pointer, and then pushes the appropriate result (be it an actual result or a Null) onto the stack. An error is
+// returned to the caller if this pushing onto the vm stack results in a stack overflow!
+func (vm *VM) callBuiltin(builtin *object.Builtin, numArgs int) error {
+	args := vm.stack[vm.sp-numArgs : vm.sp]
+	result := builtin.Fn(args...)
+	vm.sp = vm.sp - numArgs - 1
+	if result != nil {
+		return vm.push(result)
+	} else {
+		return vm.push(Null)
+	}
+}
+
 // callFunction take care of ""finding"" object.CompiledFunction on the VM stack, checking it really is a CompiledFunction
 // creating a new Frame for this function, pushing this frame into VM.frames stack and adjusting the VM.sp stack pointer.
 // If any error occurs during any part of this process, it's returned to the caller.
-func (vm *VM) callFunction(numArguments int) error {
-	// Since function arguments are sitting above the object.CompiledFunction we need to subtract the number of them
-	// we just extracted from the code.OpCall above.
-	comFun, ok := vm.stack[vm.sp-1-int(numArguments)].(*object.CompiledFunction)
-	if !ok {
-		return errors.New("tried to call a non function object: " + string(comFun.Type()))
-	}
-	if numArguments != comFun.NumParameters {
-		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", comFun.NumParameters, numArguments)
+func (vm *VM) callFunction(fn *object.CompiledFunction, numArguments int) error {
+	if numArguments != fn.NumParameters {
+		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", fn.NumParameters, numArguments)
 	}
 	// As a result of creating a new frame with a reference to a function we've pulled off the stack
 	// and then pushing the frame onto VM frames stack, the fetch-decode-execute cycle will execute the function
@@ -319,11 +350,11 @@ func (vm *VM) callFunction(numArguments int) error {
 
 														basePointer = vm.sp -numArguments
 	*/
-	frame := NewFrame(comFun, vm.sp-numArguments) // Also save the current stack pointer which becomes the base pointer of the new frame
+	frame := NewFrame(fn, vm.sp-numArguments) // Also save the current stack pointer which becomes the base pointer of the new frame
 	vm.pushFrame(frame)
 	// This reserves the space on the stack for locals
 	// Note that this reserved slots might contain no or OLD values/""dangling pointers"" - But we don't care about this.
-	vm.sp = frame.basePointer + comFun.NumLocals
+	vm.sp = frame.basePointer + fn.NumLocals
 	return nil
 }
 

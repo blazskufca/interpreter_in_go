@@ -22,7 +22,17 @@ const (
 	GlobalScope SymbolScope = "GLOBAL"
 	// LocalScope represents symbols which are defined locally in the scope and are therefore not accessible on global level.
 	LocalScope SymbolScope = "LOCAL"
+	// BuiltinScope is the scope on which the builtin functions/object.Builtin are defined
+	BuiltinScope SymbolScope = "BUILTIN"
 )
+
+// DefineBuiltin defines a symbol to a builtin function/object.Builtin.
+// This defined symbol is then stored in the SymbolTable map and returned to the caller.
+func (s *SymbolTable) DefineBuiltin(index int, name string) Symbol {
+	symbol := Symbol{Name: name, Index: index, Scope: BuiltinScope}
+	s.store[name] = symbol
+	return symbol
+}
 
 // Symbol holds all the necessary information we need for a single symbol. It's name, scope and index.
 type Symbol struct {

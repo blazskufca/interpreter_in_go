@@ -46,6 +46,10 @@ func Start(in io.Reader, out io.Writer) {
 		ENV = object.NewEnvironment()
 		// This is an environment for the macro system
 		MACRO_ENV = object.NewEnvironment()
+	} else if MODE == "bytecode" {
+		for i, v := range object.Builtins {
+			SYMBOL_TABLE.DefineBuiltin(i, v.Name)
+		}
 	}
 	for {
 		_, err := fmt.Fprintf(out, PROMPT)
